@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import * as fs from 'fs';
 import * as path from 'path';
+import { logError, logInfo } from './logger';
 
 interface EmailTemplate {
   id: string;
@@ -22,7 +23,7 @@ const loadTemplate = (templateName: string, extension: 'html' | 'txt'): string =
     const templatePath = path.join(__dirname, '..', 'templates', `${templateName}.${extension}`);
     return fs.readFileSync(templatePath, 'utf-8');
   } catch (error) {
-    console.error(`Error loading template ${templateName}.${extension}:`, error);
+    logError(`Error loading template ${templateName}.${extension}`, error);
     throw new Error(`Failed to load template: ${templateName}.${extension}`);
   }
 };
@@ -89,9 +90,9 @@ export const sendEmail = async (
     };
 
     await transporter.sendMail(mailOptions);
-    console.log(`Email sent successfully to ${to}`);
+    logInfo(`Email sent successfully to ${to}`);
   } catch (error: unknown) {
-    console.error('Error sending email:', error);
+    logError('Error sending email', error);
     throw new Error('Failed to send email');
   }
 };
@@ -128,7 +129,7 @@ export const sendTemplatedEmail = async (
     // Send email using function 1
     await sendEmail(to, template.subject, html, text);
   } catch (error: unknown) {
-    console.error('Error sending templated email:', error);
+    logError('Error sending templated email', error);
     throw error;
   }
 };

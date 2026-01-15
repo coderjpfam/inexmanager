@@ -12,6 +12,10 @@ import { validateEnv } from './config/env';
 import { errorHandler } from './utils/errors';
 import { swaggerSpec } from './config/swagger';
 import authRoutes from './routes/authRoutes';
+import { requestIdMiddleware } from './middleware/requestId';
+import { sanitizeInput } from './middleware/sanitize';
+import { setCsrfToken, csrfProtection } from './middleware/csrf';
+import { logError, logInfo, logWarning } from './utils/logger';
 
 // Load environment variables
 dotenv.config();
@@ -19,10 +23,9 @@ dotenv.config();
 // Validate environment variables before starting server
 try {
   validateEnv();
-  console.log('✅ Environment variables validated successfully');
+  logInfo('Environment variables validated successfully');
 } catch (error) {
-  console.error('❌ Environment validation failed:');
-  console.error(error instanceof Error ? error.message : error);
+  logError('Environment validation failed', error);
   process.exit(1);
 }
 
@@ -63,19 +66,76 @@ const corsOptions = {
 };
 
 // Middleware
-// Security headers (must be first)
-app.use(helmet());
+// Request ID middleware (must be first to track all requests)
+app.use(requestIdMiddleware);
+
+// Input sanitization (early in the chain, before parsing)
+app.use(sanitizeInput);
+
+// CSRF token generation (for GET requests)
+app.use(setCsrfToken);
+
+// Security headers (configured for API server)
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"], // Allow inline styles for Swagger UI
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // Allow inline scripts for Swagger UI
+        imgSrc: ["'self'", 'data:', 'https:'],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'", 'data:'],
+        objectSrc: ["'none'"],
+        mediaSrc: ["'self'"],
+        frameSrc: ["'self'"],
+      },
+    },
+    crossOriginEmbedderPolicy: false, // Disable for API server (not needed)
+    crossOriginResourcePolicy: { policy: 'cross-origin' }, // Allow cross-origin resources
+    hsts: {
+      maxAge: 31536000, // 1 year
+      includeSubDomains: true,
+      preload: true,
+    },
+    frameguard: {
+      action: 'deny', // Prevent clickjacking
+    },
+    noSniff: true, // Prevent MIME type sniffing
+    xssFilter: true, // Enable XSS filter
+    referrerPolicy: {
+      policy: 'strict-origin-when-cross-origin',
+    },
+  })
+);
 
 // Compression middleware (compress responses)
 app.use(compression());
 
 // Request logging (after security, before other middleware)
+// Enhanced morgan format with request ID, user ID, and IP
 const isDevelopment = process.env.NODE_ENV === 'development';
+
+// Custom tokens for enhanced logging
+morgan.token('request-id', (req: Request & { requestId?: string }) => req.requestId || '-');
+morgan.token('user-id', (req: Request & { user?: { userId: string } }) => req.user?.userId || 'anonymous');
+morgan.token('ip', (req: Request) => req.ip || req.socket.remoteAddress || '-');
+
+// Custom format with enhanced context
+const logFormat = isDevelopment
+  ? ':method :url :status :response-time ms - :request-id - :user-id - :ip'
+  : ':method :url :status :response-time ms :remote-addr :user-id :request-id';
+
 app.use(
-  morgan(isDevelopment ? 'dev' : 'combined', {
+  morgan(logFormat, {
     skip: (req: Request) => {
       // Skip logging for health check endpoint in production
       return !isDevelopment && req.path === '/health';
+    },
+    stream: {
+      write: (message: string) => {
+        logInfo(message.trim());
+      },
     },
   })
 );
@@ -163,7 +223,10 @@ app.get('/health', async (req: Request, res: Response) => {
   res.status(statusCode).json(healthStatus);
 });
 
-// Routes
+// API Versioning - Version 1
+app.use('/api/v1/auth', authRoutes);
+
+// Legacy route support (redirect to v1)
 app.use('/api/auth', authRoutes);
 
 // 404 handler
@@ -179,23 +242,23 @@ app.use(errorHandler);
 
 // Graceful shutdown handler
 const gracefulShutdown = (server: Server, signal: string): void => {
-  console.log(`\n${signal} received, shutting down gracefully...`);
+  logInfo(`${signal} received, shutting down gracefully...`);
 
   // Stop accepting new connections
   server.close(() => {
-    console.log('HTTP server closed');
+    logInfo('HTTP server closed');
 
     // Close MongoDB connection
     mongoose.connection.close(false, () => {
-      console.log('MongoDB connection closed');
-      console.log('Graceful shutdown complete');
+      logInfo('MongoDB connection closed');
+      logInfo('Graceful shutdown complete');
       process.exit(0);
     });
   });
 
   // Force close after 10 seconds
   setTimeout(() => {
-    console.error('Could not close connections in time, forcefully shutting down');
+    logError('Could not close connections in time, forcefully shutting down');
     mongoose.connection.close(false);
     process.exit(1);
   }, 10000);
@@ -209,9 +272,9 @@ const startServer = async (): Promise<void> => {
 
     // Start listening and capture server instance
     const server: Server = app.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
-      console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`API Documentation: http://localhost:${PORT}/api-docs`);
+      logInfo(`Server is running on port ${PORT}`);
+      logInfo(`Environment: ${process.env.NODE_ENV || 'development'}`);
+      logInfo(`API Documentation: http://localhost:${PORT}/api-docs`);
     });
 
     // Handle graceful shutdown
@@ -220,17 +283,17 @@ const startServer = async (): Promise<void> => {
 
     // Handle uncaught exceptions
     process.on('uncaughtException', (error: Error) => {
-      console.error('Uncaught Exception:', error);
+      logError('Uncaught Exception', error);
       gracefulShutdown(server, 'uncaughtException');
     });
 
     // Handle unhandled promise rejections
     process.on('unhandledRejection', (reason: unknown) => {
-      console.error('Unhandled Rejection:', reason);
+      logError('Unhandled Rejection', reason);
       gracefulShutdown(server, 'unhandledRejection');
     });
   } catch (error: unknown) {
-    console.error('Failed to start server:', error);
+    logError('Failed to start server', error);
     process.exit(1);
   }
 };

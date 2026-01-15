@@ -15,6 +15,10 @@ export function AuthHeader({ subtitle = 'Welcome back! Please sign in' }: AuthHe
           source={require('@/assets/images/logo.png')}
           style={styles.logo}
           contentFit="contain"
+          placeholder={{ blurhash: 'LGF5]+Yk^6#M@-5c,1J5@[or[Q6.' }}
+          transition={200}
+          accessibilityLabel="Income & Expense Manager Logo"
+          accessibilityRole="image"
         />
       </View>
       <ThemedText type="title" style={styles.title}>

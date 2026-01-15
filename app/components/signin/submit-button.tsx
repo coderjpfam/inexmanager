@@ -23,6 +23,10 @@ export function SubmitButton({
       ]}
       activeOpacity={0.8}
       disabled={loading || disabled}
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: loading || disabled }}
+      accessibilityHint={loading ? 'Processing request' : `Press to ${label.toLowerCase()}`}
     >
       {loading ? (
         <ActivityIndicator color="#FFFFFF" />

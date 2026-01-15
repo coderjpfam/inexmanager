@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -13,6 +13,9 @@ import { useAuthColors } from '@/hooks/use-auth-colors';
 import { useAppDispatch, useAppSelector } from '@/hooks/use-redux';
 import { signup, clearSignupError } from '@/store/authSlice';
 import { useToast } from '@/hooks/use-toast';
+import { isValidEmail, isValidName } from '@/utils/validation';
+import { useDebounce } from '@/hooks/use-debounce';
+import { signUpSchema } from '@/utils/validation-schemas';
 import { ThemedText } from '@/components/themed-text';
 import { AuthHeader } from '@/components/signin/auth-header';
 import { EmailInput } from '@/components/signin/email-input';
@@ -22,6 +25,7 @@ import { AuthFooter } from '@/components/signin/auth-footer';
 import { AuthFormCard } from '@/components/signin/auth-form-card';
 import { FullNameInput } from '@/components/signup/full-name-input';
 import { SignInLink } from '@/components/signup/sign-in-link';
+import { PasswordStrengthIndicator } from '@/components/signup/password-strength-indicator';
 
 export default function SignUpPage() {
   const [showPassword, setShowPassword] = useState(false);
@@ -30,6 +34,15 @@ export default function SignUpPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  
+  // AbortController for request cancellation
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Debounce email and name for validation
+  const debouncedEmail = useDebounce(email, 500);
+  const debouncedName = useDebounce(fullName, 500);
 
   const { containerBg, textColor } = useAuthColors();
   const dispatch = useAppDispatch();
@@ -43,7 +56,40 @@ export default function SignUpPage() {
   // Clear error when component mounts
   useEffect(() => {
     dispatch(clearSignupError());
+    
+    // Cleanup: Cancel any pending requests on unmount
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, []);
+  
+  // Validate email format on debounced email change
+  useEffect(() => {
+    if (debouncedEmail && debouncedEmail.trim() !== '') {
+      if (!isValidEmail(debouncedEmail)) {
+        setEmailError('Please enter a valid email address');
+      } else {
+        setEmailError(null);
+      }
+    } else {
+      setEmailError(null);
+    }
+  }, [debouncedEmail]);
+  
+  // Validate name format on debounced name change
+  useEffect(() => {
+    if (debouncedName && debouncedName.trim() !== '') {
+      if (!isValidName(debouncedName)) {
+        setNameError('Name must be 2-50 characters and contain only letters, spaces, hyphens, and apostrophes');
+      } else {
+        setNameError(null);
+      }
+    } else {
+      setNameError(null);
+    }
+  }, [debouncedName]);
 
   // Show error toast when signup fails
   useEffect(() => {
@@ -54,44 +100,71 @@ export default function SignUpPage() {
   }, [signupError]);
 
   const handleSubmit = async () => {
-    if (!fullName || !email || !password || !confirmPassword) {
-      showError('Please fill in all fields');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      showError('Passwords do not match');
-      return;
-    }
-
-    if (password.length < 6) {
-      showError('Password must be at least 6 characters long');
-      return;
-    }
-
-    const result = await dispatch(
-      signup({
+    // Validate inputs using Zod schema
+    try {
+      signUpSchema.parse({
         name: fullName,
         email,
         password,
         confirmPassword,
-      })
-    );
+      });
+    } catch (error: any) {
+      if (error.errors) {
+        const firstError = error.errors[0];
+        showError(firstError.message);
+        
+        // Set field-specific errors
+        if (firstError.path.includes('name')) {
+          setNameError(firstError.message);
+        }
+        if (firstError.path.includes('email')) {
+          setEmailError(firstError.message);
+        }
+        return;
+      }
+      showError('Validation failed. Please check your inputs.');
+      return;
+    }
 
-    if (signup.fulfilled.match(result)) {
-      // Signup successful - show verification message
-      setSignupEmail(email);
-      setSignupSuccess(true);
-      showSuccess(
-        'Account created successfully!',
-        'Please check your email to verify your account'
+    // Cancel any previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create new AbortController for this request
+    abortControllerRef.current = new AbortController();
+
+    try {
+      const result = await dispatch(
+        signup({
+          name: fullName,
+          email,
+          password,
+          confirmPassword,
+          signal: abortControllerRef.current.signal,
+        })
       );
-      
-      // Clear form
-      setFullName('');
-      setEmail('');
-      setPassword('');
-      setConfirmPassword('');
+
+      if (signup.fulfilled.match(result)) {
+        // Signup successful - show verification message
+        setSignupEmail(email);
+        setSignupSuccess(true);
+        showSuccess(
+          'Account created successfully!',
+          'Please check your email to verify your account'
+        );
+        
+        // Clear form
+        setFullName('');
+        setEmail('');
+        setPassword('');
+        setConfirmPassword('');
+      }
+    } catch (error) {
+      // Request was cancelled, ignore error
+      if (error instanceof Error && error.name === 'AbortError') {
+        return;
+      }
     }
   };
 
@@ -139,9 +212,23 @@ export default function SignUpPage() {
             ) : (
               <AuthFormCard>
                 <View style={styles.form}>
-                  <FullNameInput value={fullName} onChangeText={setFullName} />
+                  <FullNameInput 
+                    value={fullName} 
+                    onChangeText={(text) => {
+                      setFullName(text);
+                      setNameError(null); // Clear error on input change
+                    }}
+                    error={nameError || undefined}
+                  />
 
-                  <EmailInput value={email} onChangeText={setEmail} />
+                  <EmailInput 
+                    value={email} 
+                    onChangeText={(text) => {
+                      setEmail(text);
+                      setEmailError(null); // Clear error on input change
+                    }}
+                    error={emailError || undefined}
+                  />
 
                   <PasswordInput
                     value={password}
@@ -150,6 +237,7 @@ export default function SignUpPage() {
                     onToggleVisibility={() => setShowPassword(!showPassword)}
                     placeholder="Create a password"
                   />
+                  <PasswordStrengthIndicator password={password} />
 
                   <PasswordInput
                     value={confirmPassword}

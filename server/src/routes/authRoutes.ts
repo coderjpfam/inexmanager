@@ -26,6 +26,8 @@ import {
   verifyAccountLimiter,
   refreshTokenLimiter,
 } from '../middleware/rateLimit';
+import { requestDeduplication } from '../middleware/deduplication';
+import { csrfProtection } from '../middleware/csrf';
 import { asyncHandler } from '../utils/errors';
 
 const router = Router();
@@ -36,9 +38,10 @@ const router = Router();
 
 /**
  * @swagger
- * /api/auth/signin:
+ * /api/v1/auth/signin:
  *   post:
  *     summary: Sign in user
+ *     description: Authenticate a user with email and password. Returns JWT access token and refresh token.
  *     tags: [Authentication]
  *     requestBody:
  *       required: true
@@ -46,6 +49,9 @@ const router = Router();
  *         application/json:
  *           schema:
  *             $ref: '#/components/schemas/SigninRequest'
+ *           example:
+ *             email: "user@example.com"
+ *             password: "SecurePass123!"
  *     responses:
  *       200:
  *         description: Sign in successful
@@ -53,26 +59,51 @@ const router = Router();
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/AuthResponse'
+ *             example:
+ *               success: true
+ *               message: "Login successful"
+ *               data:
+ *                 user:
+ *                   _id: "507f1f77bcf86cd799439011"
+ *                   name: "John Doe"
+ *                   email: "user@example.com"
+ *                   profilePath: ""
+ *                   currency: "USD"
+ *                   isVerified: true
+ *                   createdAt: "2024-01-15T10:00:00.000Z"
+ *                 token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *                 refreshToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
  *       400:
  *         description: Validation error
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               success: false
+ *               message: "Validation failed"
+ *               errors:
+ *                 - field: "email"
+ *                   message: "Email is required"
  *       401:
  *         description: Invalid credentials
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               success: false
+ *               message: "Invalid email or password"
+ *               requestId: "550e8400-e29b-41d4-a716-446655440000"
  */
-router.post('/signin', strictLimiter, validateSignin, handleValidationErrors, asyncHandler(signin));
+router.post('/signin', strictLimiter, requestDeduplication(2000), validateSignin, handleValidationErrors, asyncHandler(signin));
 
 /**
  * @swagger
- * /api/auth/signup:
+ * /api/v1/auth/signup:
  *   post:
  *     summary: Sign up new user
+ *     description: Create a new user account. An email verification link will be sent to the provided email address.
  *     tags: [Authentication]
  *     requestBody:
  *       required: true
@@ -80,6 +111,11 @@ router.post('/signin', strictLimiter, validateSignin, handleValidationErrors, as
  *         application/json:
  *           schema:
  *             $ref: '#/components/schemas/SignupRequest'
+ *           example:
+ *             name: "John Doe"
+ *             email: "user@example.com"
+ *             password: "SecurePass123!"
+ *             confirmPassword: "SecurePass123!"
  *     responses:
  *       201:
  *         description: User created successfully
@@ -90,24 +126,48 @@ router.post('/signin', strictLimiter, validateSignin, handleValidationErrors, as
  *               properties:
  *                 success:
  *                   type: boolean
- *                   example: true
  *                 message:
  *                   type: string
- *                   example: User registered successfully. Please verify your email.
+ *                 data:
+ *                   $ref: '#/components/schemas/AuthResponse'
+ *             example:
+ *               success: true
+ *               message: "User created successfully. Please check your email for verification."
+ *               data:
+ *                 user:
+ *                   _id: "507f1f77bcf86cd799439011"
+ *                   name: "John Doe"
+ *                   email: "user@example.com"
+ *                   profilePath: ""
+ *                   currency: "USD"
+ *                   isVerified: false
+ *                   createdAt: "2024-01-15T10:00:00.000Z"
+ *                 token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *                 refreshToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
  *       400:
  *         description: Validation error
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               success: false
+ *               message: "Validation failed"
+ *               errors:
+ *                 - field: "password"
+ *                   message: "Password must be at least 8 characters long"
  *       409:
  *         description: User already exists
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               success: false
+ *               message: "User with this email already exists"
+ *               requestId: "550e8400-e29b-41d4-a716-446655440000"
  */
-router.post('/signup', moderateLimiter, validateSignup, handleValidationErrors, asyncHandler(signup));
+router.post('/signup', moderateLimiter, requestDeduplication(2000), validateSignup, handleValidationErrors, asyncHandler(signup));
 
 /**
  * @swagger
@@ -148,7 +208,7 @@ router.post('/signup', moderateLimiter, validateSignup, handleValidationErrors, 
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/forgot-password', forgotPasswordLimiter, validateForgotPassword, handleValidationErrors, asyncHandler(forgotPassword));
+router.post('/forgot-password', forgotPasswordLimiter, requestDeduplication(5000), validateForgotPassword, handleValidationErrors, asyncHandler(forgotPassword));
 
 /**
  * @swagger
@@ -203,7 +263,7 @@ router.post('/forgot-password', forgotPasswordLimiter, validateForgotPassword, h
  *               $ref: '#/components/schemas/Error'
  */
 router.get('/reset-password', resetPasswordLimiter, validateResetPassword, handleValidationErrors, asyncHandler(resetPassword));
-router.post('/reset-password', resetPasswordLimiter, validateResetPassword, handleValidationErrors, asyncHandler(resetPassword));
+router.post('/reset-password', resetPasswordLimiter, requestDeduplication(2000), validateResetPassword, handleValidationErrors, asyncHandler(resetPassword));
 
 /**
  * @swagger

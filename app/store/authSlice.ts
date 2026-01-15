@@ -2,6 +2,10 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { authApi, SignupPayload, SigninPayload, ForgotPasswordPayload, ResetPasswordPayload, RefreshTokenPayload, User, AuthResponse } from '../services/api';
 import { storage } from '../utils/storage';
 
+// Extended payload types that include optional signal for request cancellation
+type SignupPayloadWithSignal = SignupPayload & { signal?: AbortSignal };
+type SigninPayloadWithSignal = SigninPayload & { signal?: AbortSignal };
+
 interface AuthState {
   user: User | null;
   token: string | null;
@@ -68,14 +72,21 @@ const initialState: AuthState = {
 // Async thunks for each API
 export const signup = createAsyncThunk(
   'auth/signup',
-  async (payload: SignupPayload, { rejectWithValue }) => {
+  async (payload: SignupPayloadWithSignal, { rejectWithValue, signal }) => {
     try {
-      const response = await authApi.signup(payload);
+      // Use provided signal or thunk's signal
+      const abortSignal = payload.signal || signal;
+      const { signal: _, ...actualPayload } = payload;
+      const response = await authApi.signup(actualPayload, abortSignal);
       if (response.success && response.data) {
         return response.data;
       }
       return rejectWithValue(response.message || 'Signup failed');
     } catch (error: any) {
+      // Ignore abort errors
+      if (error.name === 'AbortError' || error.message === 'Request aborted') {
+        return rejectWithValue('Request cancelled');
+      }
       return rejectWithValue(error.message || 'Signup failed');
     }
   }
@@ -83,14 +94,21 @@ export const signup = createAsyncThunk(
 
 export const signin = createAsyncThunk(
   'auth/signin',
-  async (payload: SigninPayload, { rejectWithValue }) => {
+  async (payload: SigninPayloadWithSignal, { rejectWithValue, signal }) => {
     try {
-      const response = await authApi.signin(payload);
+      // Use provided signal or thunk's signal
+      const abortSignal = payload.signal || signal;
+      const { signal: _, ...actualPayload } = payload;
+      const response = await authApi.signin(actualPayload, abortSignal);
       if (response.success && response.data) {
         return response.data;
       }
       return rejectWithValue(response.message || 'Signin failed');
     } catch (error: any) {
+      // Ignore abort errors
+      if (error.name === 'AbortError' || error.message === 'Request aborted') {
+        return rejectWithValue('Request cancelled');
+      }
       return rejectWithValue(error.message || 'Signin failed');
     }
   }

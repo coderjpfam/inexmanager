@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User, { IUser } from '../models/User';
+import Token from '../models/Token';
 import { sendTemplatedEmail } from '../utils/email';
 import { AuthRequest } from '../middleware/auth';
 import {
@@ -11,6 +12,7 @@ import {
   NotFoundError,
   ConflictError,
 } from '../utils/errors';
+import { logError, logWarning } from '../utils/logger';
 
 interface SignupRequest extends Request {
   body: {
@@ -88,8 +90,10 @@ export const signup = async (req: SignupRequest, res: Response): Promise<void> =
     // Note: Input validation is handled by express-validator middleware
     // All inputs are already validated, sanitized, and normalized at this point
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    // Check if user already exists (optimized query - only check email)
+    const existingUser = await User.findOne({ email: email.toLowerCase() })
+      .select('email')
+      .lean();
     if (existingUser) {
       throw new ConflictError('User with this email already exists');
     }
@@ -97,13 +101,19 @@ export const signup = async (req: SignupRequest, res: Response): Promise<void> =
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user
+    // Create user with initial password in history
     const user = new User({
       name,
       email: email.toLowerCase(),
       password: hashedPassword,
       profilePath: profileImage || '',
       isVerified: false,
+      passwordHistory: [
+        {
+          password: hashedPassword,
+          changedAt: new Date(),
+        },
+      ],
     });
 
     await user.save();
@@ -112,12 +122,24 @@ export const signup = async (req: SignupRequest, res: Response): Promise<void> =
     const token = generateToken(user._id.toString(), user.email);
     const refreshToken = generateRefreshToken(user._id.toString(), user.email);
 
-    // Send verification email
+    // Generate verification token
     const verifyToken = jwt.sign(
       { userId: user._id.toString(), email: user.email },
       getJwtSecret(),
       { expiresIn: '24h' }
     );
+
+    // Store verification token in database
+    const tokenExpiresAt = new Date();
+    tokenExpiresAt.setHours(tokenExpiresAt.getHours() + 24); // 24 hours from now
+
+    await Token.create({
+      token: verifyToken,
+      type: 'email-verification',
+      userId: user._id,
+      used: false,
+      expiresAt: tokenExpiresAt,
+    });
 
     const verifyLink = `${process.env.CLIENT_URL}/auth/verify-account?token=${verifyToken}`;
 
@@ -136,7 +158,7 @@ export const signup = async (req: SignupRequest, res: Response): Promise<void> =
         { key: 'unsubscribeLink', value: `${clientUrl}/unsubscribe` },
       ]);
     } catch (emailError: unknown) {
-      console.error('Error sending verification email:', emailError);
+      logError('Error sending verification email', emailError, { requestId: (req as any).requestId });
       // Continue even if email fails
     }
 
@@ -178,8 +200,9 @@ export const signin = async (req: SigninRequest, res: Response): Promise<void> =
     // Note: Input validation is handled by express-validator middleware
     // All inputs are already validated, sanitized, and normalized at this point
 
-    // Find user
-    const user = await User.findOne({ email: email.toLowerCase() });
+    // Find user (optimized query - only select needed fields)
+    const user = await User.findOne({ email: email.toLowerCase() })
+      .select('_id email password name profilePath currency isVerified createdAt');
     if (!user) {
       throw new AuthenticationError('Invalid email or password');
     }
@@ -235,8 +258,10 @@ export const forgotPassword = async (
     // Note: Input validation is handled by express-validator middleware
     // All inputs are already validated, sanitized, and normalized at this point
 
-    // Find user
-    const user = await User.findOne({ email: email.toLowerCase() });
+    // Find user (optimized query - only check if exists, don't load full document)
+    const user = await User.findOne({ email: email.toLowerCase() })
+      .select('_id email name')
+      .lean();
     if (!user) {
       // Don't reveal if user exists or not for security
       res.status(200).json({
@@ -252,6 +277,18 @@ export const forgotPassword = async (
       getJwtSecret(),
       { expiresIn: '1h' }
     );
+
+    // Store reset token in database
+    const tokenExpiresAt = new Date();
+    tokenExpiresAt.setHours(tokenExpiresAt.getHours() + 1); // 1 hour from now
+
+    await Token.create({
+      token: resetToken,
+      type: 'password-reset',
+      userId: user._id,
+      used: false,
+      expiresAt: tokenExpiresAt,
+    });
 
     const resetLink = `${process.env.CLIENT_URL}/auth/reset-password?token=${resetToken}`;
 
@@ -273,7 +310,7 @@ export const forgotPassword = async (
     } catch (emailError: unknown) {
       // Email sending failed, but don't expose error details
       // Log for debugging but continue with success response for security
-      console.error('Error sending reset password email:', emailError);
+      logError('Error sending reset password email', emailError, { requestId: (req as any).requestId });
       throw new AppError(500, 'Failed to send reset password email');
     }
 
@@ -314,18 +351,66 @@ export const resetPassword = async (
       throw new AuthenticationError('Invalid or expired reset token');
     }
 
-    // Find user
-    const user = await User.findOne({ email: decoded.email });
+    // Check if token has been used
+    const tokenRecord = await Token.findOne({
+      token,
+      type: 'password-reset',
+      used: false,
+    });
+
+    if (!tokenRecord) {
+      throw new AuthenticationError('Invalid or already used reset token');
+    }
+
+    // Check if token is expired
+    if (tokenRecord.expiresAt < new Date()) {
+      throw new AuthenticationError('Reset token has expired');
+    }
+
+    // Find user with password history
+    const user = await User.findOne({ email: decoded.email }).select('+passwordHistory');
     if (!user) {
       throw new NotFoundError('User not found');
+    }
+
+    // Check password history (prevent reusing last 5 passwords)
+    const passwordHistorySize = 5;
+    if (user.passwordHistory && user.passwordHistory.length > 0) {
+      for (const oldPasswordEntry of user.passwordHistory.slice(-passwordHistorySize)) {
+        const isSamePassword = await bcrypt.compare(password, oldPasswordEntry.password);
+        if (isSamePassword) {
+          throw new ValidationError('You cannot reuse a recently used password. Please choose a different password.');
+        }
+      }
     }
 
     // Hash new password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Update password
+    // Update password and add to history
+    const currentPassword = user.password;
     user.password = hashedPassword;
+    
+    // Add current password to history
+    if (!user.passwordHistory) {
+      user.passwordHistory = [];
+    }
+    user.passwordHistory.push({
+      password: currentPassword,
+      changedAt: new Date(),
+    });
+    
+    // Keep only last 5 passwords
+    if (user.passwordHistory.length > passwordHistorySize) {
+      user.passwordHistory = user.passwordHistory.slice(-passwordHistorySize);
+    }
+    
     await user.save();
+
+    // Mark token as used
+    tokenRecord.used = true;
+    tokenRecord.usedAt = new Date();
+    await tokenRecord.save();
 
     res.status(200).json({
       success: true,
@@ -363,8 +448,26 @@ export const verifyAccount = async (
       throw new AuthenticationError('Invalid or expired verification token');
     }
 
-    // Find user
-    const user = await User.findOne({ email: decoded.email });
+    // Check if token has been used
+    const tokenRecord = await Token.findOne({
+      token: token as string,
+      type: 'email-verification',
+      used: false,
+    });
+
+    if (!tokenRecord) {
+      throw new AuthenticationError('Invalid or already used verification token');
+    }
+
+    // Check if token is expired
+    if (tokenRecord.expiresAt < new Date()) {
+      throw new AuthenticationError('Verification token has expired');
+    }
+
+    // Find user (optimized query - only select needed fields)
+    const user = await User.findOne({ email: decoded.email })
+      .select('_id email name profilePath currency isVerified createdAt')
+      .lean();
     if (!user) {
       throw new NotFoundError('User not found');
     }
@@ -381,6 +484,11 @@ export const verifyAccount = async (
     // Update verification status
     user.isVerified = true;
     await user.save();
+
+    // Mark token as used
+    tokenRecord.used = true;
+    tokenRecord.usedAt = new Date();
+    await tokenRecord.save();
 
     res.status(200).json({
       success: true,

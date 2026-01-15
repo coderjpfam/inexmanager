@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { logError, logInfo } from '../utils/logger';
 
 export const connectDatabase = async (): Promise<void> => {
   const mongoURI = process.env.MONGODB_URI;
@@ -35,10 +36,10 @@ export const connectDatabase = async (): Promise<void> => {
     };
 
     await mongoose.connect(mongoURI, connectionOptions);
-    console.log('✅ MongoDB connected successfully');
-    console.log(`   Connection pool: ${connectionOptions.minPoolSize}-${connectionOptions.maxPoolSize} connections`);
+    logInfo('MongoDB connected successfully');
+    logInfo(`Connection pool: ${connectionOptions.minPoolSize}-${connectionOptions.maxPoolSize} connections`);
   } catch (error: unknown) {
-    console.error('❌ MongoDB connection error:', error);
+    logError('MongoDB connection error', error);
     throw error;
   }
 };

@@ -11,6 +11,10 @@ export interface IUser extends Document {
   updatedAt: Date;
   createdBy?: string;
   isVerified: boolean;
+  passwordHistory?: Array<{
+    password: string;
+    changedAt: Date;
+  }>;
 }
 
 const UserSchema = new Schema<IUser>(
@@ -48,6 +52,23 @@ const UserSchema = new Schema<IUser>(
     isVerified: {
       type: Boolean,
       default: false,
+    },
+    passwordHistory: {
+      type: [
+        {
+          password: {
+            type: String,
+            required: true,
+          },
+          changedAt: {
+            type: Date,
+            required: true,
+            default: Date.now,
+          },
+        },
+      ],
+      default: [],
+      select: false, // Don't include in queries by default
     },
   },
   {

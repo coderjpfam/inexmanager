@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -13,6 +13,8 @@ import { useAppDispatch, useAppSelector } from '@/hooks/use-redux';
 import { signin, clearSigninError } from '@/store/authSlice';
 import { useToast } from '@/hooks/use-toast';
 import { storage } from '@/utils/storage';
+import { isValidEmail } from '@/utils/validation';
+import { useDebounce } from '@/hooks/use-debounce';
 import { AuthHeader } from '@/components/signin/auth-header';
 import { EmailInput } from '@/components/signin/email-input';
 import { PasswordInput } from '@/components/signin/password-input';
@@ -29,6 +31,13 @@ export default function SignInPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  
+  // AbortController for request cancellation
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Debounce email for validation
+  const debouncedEmail = useDebounce(email, 500);
 
   const { containerBg } = useAuthColors();
   const dispatch = useAppDispatch();
@@ -51,7 +60,27 @@ export default function SignInPage() {
     };
     loadRememberMe();
     dispatch(clearSigninError());
+    
+    // Cleanup: Cancel any pending requests on unmount
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, []);
+  
+  // Validate email format on debounced email change
+  useEffect(() => {
+    if (debouncedEmail && debouncedEmail.trim() !== '') {
+      if (!isValidEmail(debouncedEmail)) {
+        setEmailError('Please enter a valid email address');
+      } else {
+        setEmailError(null);
+      }
+    } else {
+      setEmailError(null);
+    }
+  }, [debouncedEmail]);
 
   // Handle successful authentication
   useEffect(() => {
@@ -71,16 +100,42 @@ export default function SignInPage() {
   }, [signinError]);
 
   const handleSubmit = async () => {
+    // Validate inputs
     if (!email || !password) {
       showError('Please fill in all fields');
       return;
     }
 
-    const result = await dispatch(signin({ email, password }));
-    if (signin.fulfilled.match(result)) {
-      // Save remember me preference and email
-      await storage.saveRememberMe(rememberMe, rememberMe ? email : undefined);
-      // Navigation handled by useEffect
+    if (!isValidEmail(email)) {
+      setEmailError('Please enter a valid email address');
+      showError('Please enter a valid email address');
+      return;
+    }
+
+    // Cancel any previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create new AbortController for this request
+    abortControllerRef.current = new AbortController();
+
+    try {
+      const result = await dispatch(signin({ 
+        email, 
+        password,
+        signal: abortControllerRef.current.signal,
+      }));
+      if (signin.fulfilled.match(result)) {
+        // Save remember me preference and email
+        await storage.saveRememberMe(rememberMe, rememberMe ? email : undefined);
+        // Navigation handled by useEffect
+      }
+    } catch (error) {
+      // Request was cancelled, ignore error
+      if (error instanceof Error && error.name === 'AbortError') {
+        return;
+      }
     }
   };
 
@@ -100,7 +155,14 @@ export default function SignInPage() {
 
             <AuthFormCard>
               <View style={styles.form}>
-                <EmailInput value={email} onChangeText={setEmail} />
+                <EmailInput 
+                  value={email} 
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    setEmailError(null); // Clear error on input change
+                  }}
+                  error={emailError || undefined}
+                />
 
                 <PasswordInput
                   value={password}

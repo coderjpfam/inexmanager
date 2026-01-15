@@ -88,6 +88,9 @@ export class ConflictError extends AppError {
  * Handles all errors and sends appropriate responses
  */
 import { Request, Response, NextFunction } from 'express';
+import { logError } from './logger';
+import { MongoServerError } from 'mongodb';
+import { JsonWebTokenError, TokenExpiredError } from 'jsonwebtoken';
 
 export const errorHandler = (
   err: Error | AppError,
@@ -100,6 +103,7 @@ export const errorHandler = (
     res.status(err.statusCode).json({
       success: false,
       message: err.message,
+      requestId: req.requestId,
       ...(err instanceof ValidationError && err.errors && { errors: err.errors }),
     });
     return;
@@ -110,40 +114,45 @@ export const errorHandler = (
     res.status(400).json({
       success: false,
       message: 'Invalid input data',
+      requestId: req.requestId,
     });
     return;
   }
 
   // Handle JWT errors
-  if (err.name === 'JsonWebTokenError') {
+  if (err instanceof JsonWebTokenError) {
     res.status(401).json({
       success: false,
       message: 'Invalid token',
+      requestId: req.requestId,
     });
     return;
   }
 
-  if (err.name === 'TokenExpiredError') {
+  if (err instanceof TokenExpiredError) {
     res.status(401).json({
       success: false,
       message: 'Token expired',
+      requestId: req.requestId,
     });
     return;
   }
 
   // Handle MongoDB duplicate key errors
-  if ((err as any).code === 11000) {
-    const field = Object.keys((err as any).keyPattern || {})[0] || 'field';
+  if (err instanceof MongoServerError && err.code === 11000) {
+    const field = Object.keys(err.keyPattern || {})[0] || 'field';
     res.status(409).json({
       success: false,
       message: `${field} already exists`,
+      requestId: req.requestId,
     });
     return;
   }
 
   // Handle MongoDB validation errors
-  if (err.name === 'ValidationError' && (err as any).errors) {
-    const errors = Object.values((err as any).errors).map((e: any) => ({
+  if (err.name === 'ValidationError' && 'errors' in err) {
+    const mongooseError = err as { errors: Record<string, { path: string; message: string }> };
+    const errors = Object.values(mongooseError.errors).map((e) => ({
       field: e.path,
       message: e.message,
     }));
@@ -151,19 +160,17 @@ export const errorHandler = (
       success: false,
       message: 'Validation failed',
       errors,
+      requestId: req.requestId,
     });
     return;
   }
 
   // Log unexpected errors for debugging
-  console.error('Unexpected error:', {
-    message: err.message,
-    stack: err.stack,
-    name: err.name,
+  logError('Unexpected error', err, {
+    requestId: req.requestId,
     url: req.url,
     method: req.method,
     ip: req.ip,
-    timestamp: new Date().toISOString(),
   });
 
   // Send generic error message in production, detailed in development
@@ -174,6 +181,7 @@ export const errorHandler = (
     message: isDevelopment 
       ? err.message || 'Internal server error'
       : 'Internal server error',
+    requestId: req.requestId,
     ...(isDevelopment && { 
       stack: err.stack,
       name: err.name,
@@ -186,7 +194,7 @@ export const errorHandler = (
  * Wraps async route handlers to catch errors and pass them to error handler
  */
 export const asyncHandler = (
-  fn: (req: Request, res: Response, next: NextFunction) => Promise<any>
+  fn: (req: Request, res: Response, next: NextFunction) => Promise<void | Response>
 ) => {
   return (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch(next);

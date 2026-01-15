@@ -36,8 +36,19 @@ export function PasswordInput({
           secureTextEntry={!showPassword}
           autoCapitalize="none"
           autoCorrect={false}
+          autoComplete="password"
+          textContentType="password"
+          accessibilityLabel={`${label} input`}
+          accessibilityHint="Enter your password"
+          accessibilityRole="textbox"
         />
-        <TouchableOpacity onPress={onToggleVisibility} style={styles.eyeIcon}>
+        <TouchableOpacity
+          onPress={onToggleVisibility}
+          style={styles.eyeIcon}
+          accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+          accessibilityRole="button"
+          accessibilityHint="Toggle password visibility"
+        >
           <MaterialIcons
             name={showPassword ? 'visibility-off' : 'visibility'}
             size={20}

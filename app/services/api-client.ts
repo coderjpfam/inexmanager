@@ -26,6 +26,7 @@ interface RequestOptions extends RequestInit {
   retries?: number; // Number of retry attempts for retryable errors (default: 3)
   retryDelay?: number; // Delay between retries in milliseconds (default: 1000)
   timeout?: number; // Request timeout in milliseconds (default: 30000)
+  signal?: AbortSignal; // AbortSignal for request cancellation
 }
 
 // Track if we're currently refreshing to avoid multiple refresh calls
@@ -256,13 +257,16 @@ const makeRequest = async <T>(
     // Create timeout promise
     const timeoutPromise = createTimeout(requestTimeout);
     
-    // Make the request with timeout
+    // Make the request with timeout and abort signal
+    // Note: fetch() natively supports AbortSignal, so we just pass it through
     const fetchPromise = fetch(`${API_URL}${endpoint}`, {
       ...fetchOptions,
       headers,
+      signal: fetchOptions.signal, // Support AbortController (native fetch support)
     });
 
     // Race between fetch and timeout
+    // AbortSignal is handled natively by fetch, so we don't need a separate promise
     const response = await Promise.race([fetchPromise, timeoutPromise]);
 
     // Parse response
@@ -307,6 +311,12 @@ const makeRequest = async <T>(
     // Return successful response
     return data;
   } catch (error: any) {
+    // If request was aborted, don't retry
+    if (error.name === 'AbortError' || error.message === 'Request aborted') {
+      const abortError: any = new Error('Request cancelled');
+      abortError.name = 'AbortError';
+      throw abortError;
+    }
     // Re-throw error for retry logic to handle
     throw error;
   }
