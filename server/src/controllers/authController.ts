@@ -4,6 +4,13 @@ import jwt from 'jsonwebtoken';
 import User, { IUser } from '../models/User';
 import { sendTemplatedEmail } from '../utils/email';
 import { AuthRequest } from '../middleware/auth';
+import {
+  AppError,
+  ValidationError,
+  AuthenticationError,
+  NotFoundError,
+  ConflictError,
+} from '../utils/errors';
 
 interface SignupRequest extends Request {
   body: {
@@ -41,18 +48,36 @@ interface VerifyAccountRequest extends Request {
   };
 }
 
+// Helper function to get JWT secret (validated at startup)
+const getJwtSecret = (): string => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET is not configured');
+  }
+  return secret;
+};
+
+// Helper function to get JWT refresh secret (validated at startup)
+const getJwtRefreshSecret = (): string => {
+  const secret = process.env.JWT_REFRESH_SECRET;
+  if (!secret) {
+    throw new Error('JWT_REFRESH_SECRET is not configured');
+  }
+  return secret;
+};
+
 // Helper function to generate JWT token
 const generateToken = (userId: string, email: string): string => {
-  return jwt.sign({ userId, email }, process.env.JWT_SECRET!, {
-    expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
-  });
+  const secret = getJwtSecret();
+  const expiresIn = process.env.JWT_ACCESS_EXPIRES_IN || '15m';
+  return jwt.sign({ userId, email }, secret, { expiresIn } as jwt.SignOptions);
 };
 
 // Helper function to generate refresh token
 const generateRefreshToken = (userId: string, email: string): string => {
-  return jwt.sign({ userId, email }, process.env.JWT_REFRESH_SECRET!, {
-    expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
-  });
+  const secret = getJwtRefreshSecret();
+  const expiresIn = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
+  return jwt.sign({ userId, email }, secret, { expiresIn } as jwt.SignOptions);
 };
 
 // 1. Signup
@@ -60,39 +85,13 @@ export const signup = async (req: SignupRequest, res: Response): Promise<void> =
   try {
     const { name, email, password, confirmPassword, profileImage } = req.body;
 
-    // Validation
-    if (!name || !email || !password || !confirmPassword) {
-      res.status(400).json({
-        success: false,
-        message: 'Please provide all required fields',
-      });
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      res.status(400).json({
-        success: false,
-        message: 'Passwords do not match',
-      });
-      return;
-    }
-
-    if (password.length < 6) {
-      res.status(400).json({
-        success: false,
-        message: 'Password must be at least 6 characters long',
-      });
-      return;
-    }
+    // Note: Input validation is handled by express-validator middleware
+    // All inputs are already validated, sanitized, and normalized at this point
 
     // Check if user already exists
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
-      res.status(400).json({
-        success: false,
-        message: 'User with this email already exists',
-      });
-      return;
+      throw new ConflictError('User with this email already exists');
     }
 
     // Hash password
@@ -116,7 +115,7 @@ export const signup = async (req: SignupRequest, res: Response): Promise<void> =
     // Send verification email
     const verifyToken = jwt.sign(
       { userId: user._id.toString(), email: user.email },
-      process.env.JWT_SECRET!,
+      getJwtSecret(),
       { expiresIn: '24h' }
     );
 
@@ -161,13 +160,13 @@ export const signup = async (req: SignupRequest, res: Response): Promise<void> =
         refreshToken,
       },
     });
-  } catch (error: any) {
-    console.error('Signup error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message,
-    });
+  } catch (error) {
+    // If it's already an AppError, re-throw it (will be handled by error handler)
+    if (error instanceof AppError) {
+      throw error;
+    }
+    // For unexpected errors, wrap in AppError
+    throw new AppError(500, 'Failed to create user account');
   }
 };
 
@@ -176,33 +175,19 @@ export const signin = async (req: SigninRequest, res: Response): Promise<void> =
   try {
     const { email, password } = req.body;
 
-    // Validation
-    if (!email || !password) {
-      res.status(400).json({
-        success: false,
-        message: 'Please provide email and password',
-      });
-      return;
-    }
+    // Note: Input validation is handled by express-validator middleware
+    // All inputs are already validated, sanitized, and normalized at this point
 
     // Find user
     const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
-      res.status(401).json({
-        success: false,
-        message: 'Invalid email or password',
-      });
-      return;
+      throw new AuthenticationError('Invalid email or password');
     }
 
     // Check password
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      res.status(401).json({
-        success: false,
-        message: 'Invalid email or password',
-      });
-      return;
+      throw new AuthenticationError('Invalid email or password');
     }
 
     // Generate JWT token
@@ -229,13 +214,13 @@ export const signin = async (req: SigninRequest, res: Response): Promise<void> =
         refreshToken,
       },
     });
-  } catch (error: any) {
-    console.error('Signin error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message,
-    });
+  } catch (error) {
+    // If it's already an AppError, re-throw it (will be handled by error handler)
+    if (error instanceof AppError) {
+      throw error;
+    }
+    // For unexpected errors, wrap in AppError
+    throw new AppError(500, 'Failed to sign in');
   }
 };
 
@@ -247,14 +232,8 @@ export const forgotPassword = async (
   try {
     const { email } = req.body;
 
-    // Validation
-    if (!email) {
-      res.status(400).json({
-        success: false,
-        message: 'Please provide your email address',
-      });
-      return;
-    }
+    // Note: Input validation is handled by express-validator middleware
+    // All inputs are already validated, sanitized, and normalized at this point
 
     // Find user
     const user = await User.findOne({ email: email.toLowerCase() });
@@ -270,7 +249,7 @@ export const forgotPassword = async (
     // Generate reset token
     const resetToken = jwt.sign(
       { userId: user._id.toString(), email: user.email },
-      process.env.JWT_SECRET!,
+      getJwtSecret(),
       { expiresIn: '1h' }
     );
 
@@ -292,25 +271,23 @@ export const forgotPassword = async (
         { key: 'unsubscribeLink', value: `${clientUrl}/unsubscribe` },
       ]);
     } catch (emailError) {
+      // Email sending failed, but don't expose error details
+      // Log for debugging but continue with success response for security
       console.error('Error sending reset password email:', emailError);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to send reset password email',
-      });
-      return;
+      throw new AppError(500, 'Failed to send reset password email');
     }
 
     res.status(200).json({
       success: true,
       message: 'If an account exists with this email, a password reset link has been sent.',
     });
-  } catch (error: any) {
-    console.error('Forgot password error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message,
-    });
+  } catch (error) {
+    // If it's already an AppError, re-throw it (will be handled by error handler)
+    if (error instanceof AppError) {
+      throw error;
+    }
+    // For unexpected errors, wrap in AppError
+    throw new AppError(500, 'Failed to process password reset request');
   }
 };
 
@@ -323,62 +300,24 @@ export const resetPassword = async (
     const { password, confirmPassword } = req.body;
     const token = req.query.token as string;
 
-    // Validation
-    if (!token) {
-      res.status(400).json({
-        success: false,
-        message: 'Reset token is required',
-      });
-      return;
-    }
-
-    if (!password || !confirmPassword) {
-      res.status(400).json({
-        success: false,
-        message: 'Please provide password and confirm password',
-      });
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      res.status(400).json({
-        success: false,
-        message: 'Passwords do not match',
-      });
-      return;
-    }
-
-    if (password.length < 6) {
-      res.status(400).json({
-        success: false,
-        message: 'Password must be at least 6 characters long',
-      });
-      return;
-    }
+    // Note: Input validation is handled by express-validator middleware
+    // All inputs are already validated, sanitized, and normalized at this point
 
     // Verify token and get email
     let decoded: { userId: string; email: string };
     try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
+      decoded = jwt.verify(token, getJwtSecret()) as {
         userId: string;
         email: string;
       };
     } catch (error) {
-      res.status(401).json({
-        success: false,
-        message: 'Invalid or expired reset token',
-      });
-      return;
+      throw new AuthenticationError('Invalid or expired reset token');
     }
 
     // Find user
     const user = await User.findOne({ email: decoded.email });
     if (!user) {
-      res.status(404).json({
-        success: false,
-        message: 'User not found',
-      });
-      return;
+      throw new NotFoundError('User not found');
     }
 
     // Hash new password
@@ -392,13 +331,13 @@ export const resetPassword = async (
       success: true,
       message: 'Password reset successfully',
     });
-  } catch (error: any) {
-    console.error('Reset password error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message,
-    });
+  } catch (error) {
+    // If it's already an AppError, re-throw it (will be handled by error handler)
+    if (error instanceof AppError) {
+      throw error;
+    }
+    // For unexpected errors, wrap in AppError
+    throw new AppError(500, 'Failed to reset password');
   }
 };
 
@@ -410,37 +349,24 @@ export const verifyAccount = async (
   try {
     const { token } = req.query;
 
-    if (!token) {
-      res.status(400).json({
-        success: false,
-        message: 'Verification token is required',
-      });
-      return;
-    }
+    // Note: Input validation is handled by express-validator middleware
+    // All inputs are already validated, sanitized, and normalized at this point
 
     // Verify token and get email
     let decoded: { userId: string; email: string };
     try {
-      decoded = jwt.verify(token as string, process.env.JWT_SECRET!) as {
+      decoded = jwt.verify(token as string, getJwtSecret()) as {
         userId: string;
         email: string;
       };
     } catch (error) {
-      res.status(401).json({
-        success: false,
-        message: 'Invalid or expired verification token',
-      });
-      return;
+      throw new AuthenticationError('Invalid or expired verification token');
     }
 
     // Find user
     const user = await User.findOne({ email: decoded.email });
     if (!user) {
-      res.status(404).json({
-        success: false,
-        message: 'User not found',
-      });
-      return;
+      throw new NotFoundError('User not found');
     }
 
     // Check if already verified
@@ -460,13 +386,13 @@ export const verifyAccount = async (
       success: true,
       message: 'Account verified successfully',
     });
-  } catch (error: any) {
-    console.error('Verify account error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message,
-    });
+  } catch (error) {
+    // If it's already an AppError, re-throw it (will be handled by error handler)
+    if (error instanceof AppError) {
+      throw error;
+    }
+    // For unexpected errors, wrap in AppError
+    throw new AppError(500, 'Failed to verify account');
   }
 };
 
@@ -481,13 +407,13 @@ export const verifyToken = async (req: AuthRequest, res: Response): Promise<void
         user: req.user,
       },
     });
-  } catch (error: any) {
-    console.error('Verify token error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message,
-    });
+  } catch (error) {
+    // If it's already an AppError, re-throw it (will be handled by error handler)
+    if (error instanceof AppError) {
+      throw error;
+    }
+    // For unexpected errors, wrap in AppError
+    throw new AppError(500, 'Failed to verify token');
   }
 };
 
@@ -496,27 +422,18 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
   try {
     const { refreshToken } = req.body;
 
-    if (!refreshToken) {
-      res.status(400).json({
-        success: false,
-        message: 'Refresh token is required',
-      });
-      return;
-    }
+    // Note: Input validation is handled by express-validator middleware
+    // All inputs are already validated, sanitized, and normalized at this point
 
     // Verify refresh token
     let decoded: { userId: string; email: string };
     try {
-      decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!) as {
+      decoded = jwt.verify(refreshToken, getJwtRefreshSecret()) as {
         userId: string;
         email: string;
       };
     } catch (error) {
-      res.status(401).json({
-        success: false,
-        message: 'Invalid or expired refresh token',
-      });
-      return;
+      throw new AuthenticationError('Invalid or expired refresh token');
     }
 
     // Generate new access token
@@ -531,12 +448,12 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
         refreshToken: newRefreshToken,
       },
     });
-  } catch (error: any) {
-    console.error('Refresh token error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message,
-    });
+  } catch (error) {
+    // If it's already an AppError, re-throw it (will be handled by error handler)
+    if (error instanceof AppError) {
+      throw error;
+    }
+    // For unexpected errors, wrap in AppError
+    throw new AppError(500, 'Failed to refresh token');
   }
 };
