@@ -123,9 +123,18 @@ export const signup = async (req: SignupRequest, res: Response): Promise<void> =
     const verifyLink = `${process.env.CLIENT_URL}/auth/verify-account?token=${verifyToken}`;
 
     try {
+      const clientUrl = process.env.CLIENT_URL || 'http://localhost:8081';
       await sendTemplatedEmail('verify-account', user.email, [
         { key: 'name', value: user.name },
         { key: 'verifyLink', value: verifyLink },
+        { key: 'supportEmail', value: process.env.SUPPORT_EMAIL || 'support@inexmanager.com' },
+        { key: 'facebookLink', value: process.env.FACEBOOK_LINK || '#' },
+        { key: 'twitterLink', value: process.env.TWITTER_LINK || '#' },
+        { key: 'instagramLink', value: process.env.INSTAGRAM_LINK || '#' },
+        { key: 'companyAddress', value: process.env.COMPANY_ADDRESS || '123 Finance Street, Money City, FC 12345' },
+        { key: 'privacyPolicyLink', value: `${clientUrl}/privacy-policy` },
+        { key: 'termsLink', value: `${clientUrl}/terms-of-service` },
+        { key: 'unsubscribeLink', value: `${clientUrl}/unsubscribe` },
       ]);
     } catch (emailError) {
       console.error('Error sending verification email:', emailError);
@@ -269,9 +278,18 @@ export const forgotPassword = async (
 
     // Send reset password email
     try {
+      const clientUrl = process.env.CLIENT_URL || 'http://localhost:8081';
       await sendTemplatedEmail('reset-password', user.email, [
         { key: 'name', value: user.name },
         { key: 'resetLink', value: resetLink },
+        { key: 'supportEmail', value: process.env.SUPPORT_EMAIL || 'support@inexmanager.com' },
+        { key: 'facebookLink', value: process.env.FACEBOOK_LINK || '#' },
+        { key: 'twitterLink', value: process.env.TWITTER_LINK || '#' },
+        { key: 'instagramLink', value: process.env.INSTAGRAM_LINK || '#' },
+        { key: 'companyAddress', value: process.env.COMPANY_ADDRESS || '123 Finance Street, Money City, FC 12345' },
+        { key: 'privacyPolicyLink', value: `${clientUrl}/privacy-policy` },
+        { key: 'termsLink', value: `${clientUrl}/terms-of-service` },
+        { key: 'unsubscribeLink', value: `${clientUrl}/unsubscribe` },
       ]);
     } catch (emailError) {
       console.error('Error sending reset password email:', emailError);

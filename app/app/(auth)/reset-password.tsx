@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -7,13 +7,16 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useAuthColors } from '@/hooks/use-auth-colors';
+import { useAppDispatch, useAppSelector } from '@/hooks/use-redux';
+import { resetPassword, clearResetPasswordError } from '@/store/authSlice';
+import { useToast } from '@/hooks/use-toast';
 import { AuthHeader } from '@/components/signin/auth-header';
 import { PasswordInput } from '@/components/signin/password-input';
 import { SubmitButton } from '@/components/signin/submit-button';
 import { AuthFooter } from '@/components/signin/auth-footer';
 import { AuthFormCard } from '@/components/signin/auth-form-card';
-import { router, useLocalSearchParams } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { TouchableOpacity } from 'react-native';
 
@@ -25,23 +28,61 @@ export default function ResetPasswordPage() {
 
   const { containerBg, textColor } = useAuthColors();
   const params = useLocalSearchParams();
+  const token = params.token as string;
+  const dispatch = useAppDispatch();
+  const { resetPasswordLoading, resetPasswordError } = useAppSelector(
+    (state) => state.auth
+  );
+  const { showError, showSuccess } = useToast();
 
-  const handleSubmit = () => {
+  // Clear error when component mounts
+  useEffect(() => {
+    dispatch(clearResetPasswordError());
+  }, []);
+
+  // Show error toast when reset password fails
+  useEffect(() => {
+    if (resetPasswordError) {
+      showError(resetPasswordError);
+      dispatch(clearResetPasswordError());
+    }
+  }, [resetPasswordError]);
+
+  const handleSubmit = async () => {
+    if (!token) {
+      showError('Reset token is missing. Please use the link from your email.');
+      return;
+    }
+
+    if (!password || !confirmPassword) {
+      showError('Please fill in all fields');
+      return;
+    }
+
     if (password !== confirmPassword) {
-      console.log('Passwords do not match');
+      showError('Passwords do not match');
       return;
     }
-    if (password.length < 8) {
-      console.log('Password must be at least 8 characters');
+
+    if (password.length < 6) {
+      showError('Password must be at least 6 characters long');
       return;
     }
-    console.log('Reset password submitted:', {
-      password,
-      token: params.token, // Typically received from email link
-    });
-    // Handle reset password logic here
-    // After successful reset, navigate to sign in
-    // router.replace('/(auth)/sign-in');
+
+    const result = await dispatch(
+      resetPassword({
+        password,
+        confirmPassword,
+        token,
+      })
+    );
+
+    if (resetPassword.fulfilled.match(result)) {
+      showSuccess('Password reset successfully!', 'You can now sign in with your new password');
+      setTimeout(() => {
+        router.replace('/(auth)/sign-in');
+      }, 2000);
+    }
   };
 
   return (
@@ -82,7 +123,11 @@ export default function ResetPasswordPage() {
                   placeholder="Confirm your new password"
                 />
 
-                <SubmitButton label="Reset Password" onPress={handleSubmit} />
+                <SubmitButton
+                  label="Reset Password"
+                  onPress={handleSubmit}
+                  loading={resetPasswordLoading}
+                />
               </View>
 
               <View style={styles.backToSignIn}>

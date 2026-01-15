@@ -8,11 +8,14 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useAuthColors } from '@/hooks/use-auth-colors';
+import { useAppDispatch, useAppSelector } from '@/hooks/use-redux';
+import { verifyAccount, clearVerifyAccountError } from '@/store/authSlice';
+import { useToast } from '@/hooks/use-toast';
 import { AuthHeader } from '@/components/signin/auth-header';
 import { AuthFooter } from '@/components/signin/auth-footer';
 import { AuthFormCard } from '@/components/signin/auth-form-card';
-import { router, useLocalSearchParams } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { TouchableOpacity } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -23,48 +26,52 @@ export default function VerifyAccountPage() {
   const [status, setStatus] = useState<VerificationStatus>('loading');
   const [message, setMessage] = useState('');
 
-  const { containerBg, textColor, cardBg } = useAuthColors();
+  const { containerBg, textColor } = useAuthColors();
   const params = useLocalSearchParams();
   const token = params.token as string;
+  const dispatch = useAppDispatch();
+  const { verifyAccountLoading, verifyAccountError } = useAppSelector(
+    (state) => state.auth
+  );
+  const { showError } = useToast();
 
   useEffect(() => {
     if (token) {
-      verifyAccount();
+      handleVerifyAccount();
     } else {
       setStatus('error');
       setMessage('Verification token is missing. Please check your email link.');
     }
   }, [token]);
 
-  const verifyAccount = async () => {
-    try {
-      // Replace with your actual API endpoint
-      const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
-      const response = await fetch(`${API_URL}/api/auth/verify-account?token=${token}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+  // Clear error when component mounts
+  useEffect(() => {
+    dispatch(clearVerifyAccountError());
+  }, []);
 
-      const data = await response.json();
-
-      if (response.ok) {
-        if (data.message === 'Account is already verified') {
-          setStatus('already-verified');
-          setMessage('Your account is already verified. You can sign in now.');
-        } else {
-          setStatus('success');
-          setMessage('Your account has been verified successfully!');
-        }
-      } else {
-        setStatus('error');
-        setMessage(data.message || 'Verification failed. The link may have expired.');
-      }
-    } catch (error) {
-      console.error('Verification error:', error);
+  // Handle verification status based on Redux state
+  useEffect(() => {
+    if (verifyAccountLoading) {
+      setStatus('loading');
+    } else if (verifyAccountError) {
       setStatus('error');
-      setMessage('An error occurred while verifying your account. Please try again.');
+      setMessage(verifyAccountError);
+      showError(verifyAccountError);
+      dispatch(clearVerifyAccountError());
+    }
+  }, [verifyAccountLoading, verifyAccountError]);
+
+  const handleVerifyAccount = async () => {
+    const result = await dispatch(verifyAccount(token));
+    if (verifyAccount.fulfilled.match(result)) {
+      const resultMessage = result.payload as string;
+      if (resultMessage === 'Account is already verified') {
+        setStatus('already-verified');
+        setMessage('Your account is already verified. You can sign in now.');
+      } else {
+        setStatus('success');
+        setMessage('Your account has been verified successfully!');
+      }
     }
   };
 
@@ -145,7 +152,7 @@ export default function VerifyAccountPage() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.button}
-                onPress={verifyAccount}
+                onPress={handleVerifyAccount}
               >
                 <ThemedText style={styles.buttonText}>Try Again</ThemedText>
               </TouchableOpacity>

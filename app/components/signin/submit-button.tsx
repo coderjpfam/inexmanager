@@ -1,15 +1,34 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { TouchableOpacity, Text, StyleSheet, ActivityIndicator } from 'react-native';
 
 interface SubmitButtonProps {
   label: string;
   onPress: () => void;
+  loading?: boolean;
+  disabled?: boolean;
 }
 
-export function SubmitButton({ label, onPress }: SubmitButtonProps) {
+export function SubmitButton({
+  label,
+  onPress,
+  loading = false,
+  disabled = false,
+}: SubmitButtonProps) {
   return (
-    <TouchableOpacity onPress={onPress} style={styles.submitButton} activeOpacity={0.8}>
-      <Text style={styles.submitButtonText}>{label}</Text>
+    <TouchableOpacity
+      onPress={onPress}
+      style={[
+        styles.submitButton,
+        (loading || disabled) && styles.submitButtonDisabled,
+      ]}
+      activeOpacity={0.8}
+      disabled={loading || disabled}
+    >
+      {loading ? (
+        <ActivityIndicator color="#FFFFFF" />
+      ) : (
+        <Text style={styles.submitButtonText}>{label}</Text>
+      )}
     </TouchableOpacity>
   );
 }
@@ -31,5 +50,8 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
   },
 });
