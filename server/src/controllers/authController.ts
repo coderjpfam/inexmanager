@@ -135,7 +135,7 @@ export const signup = async (req: SignupRequest, res: Response): Promise<void> =
         { key: 'termsLink', value: `${clientUrl}/terms-of-service` },
         { key: 'unsubscribeLink', value: `${clientUrl}/unsubscribe` },
       ]);
-    } catch (emailError) {
+    } catch (emailError: unknown) {
       console.error('Error sending verification email:', emailError);
       // Continue even if email fails
     }
@@ -160,7 +160,7 @@ export const signup = async (req: SignupRequest, res: Response): Promise<void> =
         refreshToken,
       },
     });
-  } catch (error) {
+  } catch (error: unknown) {
     // If it's already an AppError, re-throw it (will be handled by error handler)
     if (error instanceof AppError) {
       throw error;
@@ -214,7 +214,7 @@ export const signin = async (req: SigninRequest, res: Response): Promise<void> =
         refreshToken,
       },
     });
-  } catch (error) {
+  } catch (error: unknown) {
     // If it's already an AppError, re-throw it (will be handled by error handler)
     if (error instanceof AppError) {
       throw error;
@@ -270,7 +270,7 @@ export const forgotPassword = async (
         { key: 'termsLink', value: `${clientUrl}/terms-of-service` },
         { key: 'unsubscribeLink', value: `${clientUrl}/unsubscribe` },
       ]);
-    } catch (emailError) {
+    } catch (emailError: unknown) {
       // Email sending failed, but don't expose error details
       // Log for debugging but continue with success response for security
       console.error('Error sending reset password email:', emailError);
@@ -281,7 +281,7 @@ export const forgotPassword = async (
       success: true,
       message: 'If an account exists with this email, a password reset link has been sent.',
     });
-  } catch (error) {
+  } catch (error: unknown) {
     // If it's already an AppError, re-throw it (will be handled by error handler)
     if (error instanceof AppError) {
       throw error;
@@ -310,7 +310,7 @@ export const resetPassword = async (
         userId: string;
         email: string;
       };
-    } catch (error) {
+    } catch (error: unknown) {
       throw new AuthenticationError('Invalid or expired reset token');
     }
 
@@ -331,7 +331,7 @@ export const resetPassword = async (
       success: true,
       message: 'Password reset successfully',
     });
-  } catch (error) {
+  } catch (error: unknown) {
     // If it's already an AppError, re-throw it (will be handled by error handler)
     if (error instanceof AppError) {
       throw error;
@@ -359,7 +359,7 @@ export const verifyAccount = async (
         userId: string;
         email: string;
       };
-    } catch (error) {
+    } catch (error: unknown) {
       throw new AuthenticationError('Invalid or expired verification token');
     }
 
@@ -386,7 +386,7 @@ export const verifyAccount = async (
       success: true,
       message: 'Account verified successfully',
     });
-  } catch (error) {
+  } catch (error: unknown) {
     // If it's already an AppError, re-throw it (will be handled by error handler)
     if (error instanceof AppError) {
       throw error;
@@ -407,7 +407,7 @@ export const verifyToken = async (req: AuthRequest, res: Response): Promise<void
         user: req.user,
       },
     });
-  } catch (error) {
+  } catch (error: unknown) {
     // If it's already an AppError, re-throw it (will be handled by error handler)
     if (error instanceof AppError) {
       throw error;
@@ -432,7 +432,7 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
         userId: string;
         email: string;
       };
-    } catch (error) {
+    } catch (error: unknown) {
       throw new AuthenticationError('Invalid or expired refresh token');
     }
 
@@ -448,7 +448,7 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
         refreshToken: newRefreshToken,
       },
     });
-  } catch (error) {
+  } catch (error: unknown) {
     // If it's already an AppError, re-throw it (will be handled by error handler)
     if (error instanceof AppError) {
       throw error;

@@ -9,6 +9,7 @@ import type { RootState, AppDispatch } from '@/store';
 import { shouldRefreshToken, isTokenExpired } from '@/utils/token';
 import { categorizeError, isRetryableError, ErrorType, type CategorizedError } from '@/utils/errors';
 import { logError, logWarning } from '@/utils/logger';
+import { checkNetworkStatus } from '@/hooks/use-network-status';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -244,6 +245,14 @@ const makeRequest = async <T>(
   }
 
   try {
+    // Check network status before making request
+    const isOnline = await checkNetworkStatus();
+    if (!isOnline) {
+      const error: any = new Error('No internet connection. Please check your network and try again.');
+      error.statusCode = 0;
+      throw error;
+    }
+
     // Create timeout promise
     const timeoutPromise = createTimeout(requestTimeout);
     

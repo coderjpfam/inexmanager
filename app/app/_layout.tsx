@@ -8,6 +8,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ToastConfig } from '@/components/toast-config';
 import { AuthGuard } from '@/components/auth-guard';
 import { AppErrorBoundary } from '@/components/error-boundary';
+import { NetworkStatus } from '@/components/network-status';
 import { store } from '@/store';
 
 export const unstable_settings = {
@@ -29,11 +30,11 @@ export default function RootLayout() {
               <Stack.Screen name="(auth)/reset-password" options={{ headerShown: false }} />
               <Stack.Screen name="(auth)/verify-account" options={{ headerShown: false }} />
               <Stack.Screen name="(main)/dashboard" options={{ headerShown: false }} />
-              <Stack.Screen name="auth" options={{ headerShown: false }} />
             </Stack>
           </AuthGuard>
           <StatusBar style="auto" />
           <ToastConfig />
+          <NetworkStatus />
         </ThemeProvider>
       </Provider>
     </AppErrorBoundary>
