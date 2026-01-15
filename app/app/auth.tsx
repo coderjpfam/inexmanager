@@ -25,7 +25,6 @@ export default function AuthPage() {
   const { backgroundColor, textColor } = useAuthColors();
 
   const handleSubmit = () => {
-    console.log('Form submitted:', { email, password, mode: isLogin ? 'login' : 'signup' });
     // Handle authentication logic here
   };
 

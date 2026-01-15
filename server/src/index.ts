@@ -1,5 +1,7 @@
 import express, { Application, Request, Response } from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
 import dotenv from 'dotenv';
 import { connectDatabase } from './config/database';
 import { validateEnv } from './config/env';
@@ -56,9 +58,23 @@ const corsOptions = {
 };
 
 // Middleware
+// Security headers (must be first)
+app.use(helmet());
+
+// Request logging (after security, before other middleware)
+const isDevelopment = process.env.NODE_ENV === 'development';
+app.use(
+  morgan(isDevelopment ? 'dev' : 'combined', {
+    skip: (req: Request) => {
+      // Skip logging for health check endpoint in production
+      return !isDevelopment && req.path === '/health';
+    },
+  })
+);
+
 app.use(cors(corsOptions));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' })); // Limit JSON payload size to 10MB
+app.use(express.urlencoded({ extended: true, limit: '10mb' })); // Limit URL-encoded payload size to 10MB
 
 // Health check route
 app.get('/health', (req: Request, res: Response) => {

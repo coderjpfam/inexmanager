@@ -8,6 +8,7 @@ import { refreshToken, logout } from '@/store/authSlice';
 import type { RootState, AppDispatch } from '@/store';
 import { shouldRefreshToken, isTokenExpired } from '@/utils/token';
 import { categorizeError, isRetryableError, ErrorType, type CategorizedError } from '@/utils/errors';
+import { logError, logWarning } from '@/utils/logger';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -72,7 +73,7 @@ const refreshAccessToken = async (): Promise<string | null> => {
     isRefreshing = false;
     refreshPromise = null;
     // Refresh token is expired, logout user
-    console.warn('Refresh token expired, logging out user');
+    logWarning('Refresh token expired, logging out user');
     dispatch(logout());
     return null;
   }
@@ -86,12 +87,12 @@ const refreshAccessToken = async (): Promise<string | null> => {
         return result.payload.token;
       } else {
         // Refresh failed, logout user
-        console.warn('Token refresh failed, logging out user');
+        logWarning('Token refresh failed, logging out user');
         dispatch(logout());
         return null;
       }
     } catch (error) {
-      console.error('Error refreshing token:', error);
+      logError('Error refreshing token', error);
       dispatch(logout());
       return null;
     } finally {

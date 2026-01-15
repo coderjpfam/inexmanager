@@ -14,6 +14,7 @@ import { storage } from '@/utils/storage';
 import { isTokenExpired } from '@/utils/token';
 import { useAuthColors } from '@/hooks/use-auth-colors';
 import { ThemedText } from '@/components/themed-text';
+import { logError } from '@/utils/logger';
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
@@ -94,7 +95,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         dispatch(loadCredentials({ user: null, token: null, refreshToken: null }));
       }
     } catch (error) {
-      console.error('Error checking auth status:', error);
+      logError('Error checking auth status', error);
       // On error, clear storage and redirect to sign-in
       await storage.clearAll();
       dispatch(loadCredentials({ user: null, token: null, refreshToken: null }));

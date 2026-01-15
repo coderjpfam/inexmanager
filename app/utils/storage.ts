@@ -10,6 +10,7 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import type { User } from '@/services/api';
+import { logError, logWarning } from './logger';
 
 const TOKEN_KEY = '@auth_token';
 const REFRESH_TOKEN_KEY = '@auth_refresh_token';
@@ -31,14 +32,14 @@ const platformStorage = {
       try {
         localStorage.setItem(key, value);
       } catch (error) {
-        console.error('Error saving to localStorage:', error);
+        logError('Error saving to localStorage', error);
         throw error;
       }
     } else {
       try {
         await AsyncStorage.setItem(key, value);
       } catch (error) {
-        console.error('Error saving to AsyncStorage:', error);
+        logError('Error saving to AsyncStorage', error);
         throw error;
       }
     }
@@ -52,14 +53,14 @@ const platformStorage = {
       try {
         return localStorage.getItem(key);
       } catch (error) {
-        console.error('Error reading from localStorage:', error);
+        logError('Error reading from localStorage', error);
         return null;
       }
     } else {
       try {
         return await AsyncStorage.getItem(key);
       } catch (error) {
-        console.error('Error reading from AsyncStorage:', error);
+        logError('Error reading from AsyncStorage', error);
         return null;
       }
     }
@@ -73,14 +74,14 @@ const platformStorage = {
       try {
         localStorage.removeItem(key);
       } catch (error) {
-        console.error('Error removing from localStorage:', error);
+        logError('Error removing from localStorage', error);
         throw error;
       }
     } else {
       try {
         await AsyncStorage.removeItem(key);
       } catch (error) {
-        console.error('Error removing from AsyncStorage:', error);
+        logError('Error removing from AsyncStorage', error);
         throw error;
       }
     }
@@ -94,14 +95,14 @@ const platformStorage = {
       try {
         keys.forEach((key) => localStorage.removeItem(key));
       } catch (error) {
-        console.error('Error removing multiple items from localStorage:', error);
+        logError('Error removing multiple items from localStorage', error);
         throw error;
       }
     } else {
       try {
         await AsyncStorage.multiRemove(keys);
       } catch (error) {
-        console.error('Error removing multiple items from AsyncStorage:', error);
+        logError('Error removing multiple items from AsyncStorage', error);
         throw error;
       }
     }
@@ -122,13 +123,13 @@ export const storage = {
         await SecureStore.setItemAsync(TOKEN_KEY, token);
       }
     } catch (error) {
-      console.error('Error saving token:', error);
+      logError('Error saving token', error);
       // Fallback to AsyncStorage if SecureStore fails
       if (!isWeb) {
         try {
           await AsyncStorage.setItem(TOKEN_KEY, token);
         } catch (fallbackError) {
-          console.error('Error saving token to AsyncStorage fallback:', fallbackError);
+          logError('Error saving token to AsyncStorage fallback', fallbackError);
         }
       }
     }
@@ -150,13 +151,13 @@ export const storage = {
         return await AsyncStorage.getItem(TOKEN_KEY);
       }
     } catch (error) {
-      console.error('Error getting token:', error);
+      logError('Error getting token', error);
       // Fallback to AsyncStorage if SecureStore fails
       if (!isWeb) {
         try {
           return await AsyncStorage.getItem(TOKEN_KEY);
         } catch (fallbackError) {
-          console.error('Error getting token from AsyncStorage fallback:', fallbackError);
+          logError('Error getting token from AsyncStorage fallback', fallbackError);
           return null;
         }
       }
@@ -177,13 +178,13 @@ export const storage = {
         await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refreshToken);
       }
     } catch (error) {
-      console.error('Error saving refresh token:', error);
+      logError('Error saving refresh token', error);
       // Fallback to AsyncStorage if SecureStore fails
       if (!isWeb) {
         try {
           await AsyncStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
         } catch (fallbackError) {
-          console.error('Error saving refresh token to AsyncStorage fallback:', fallbackError);
+          logError('Error saving refresh token to AsyncStorage fallback', fallbackError);
         }
       }
     }
@@ -205,13 +206,13 @@ export const storage = {
         return await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
       }
     } catch (error) {
-      console.error('Error getting refresh token:', error);
+      logError('Error getting refresh token', error);
       // Fallback to AsyncStorage if SecureStore fails
       if (!isWeb) {
         try {
           return await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
         } catch (fallbackError) {
-          console.error('Error getting refresh token from AsyncStorage fallback:', fallbackError);
+          logError('Error getting refresh token from AsyncStorage fallback', fallbackError);
           return null;
         }
       }
@@ -226,7 +227,7 @@ export const storage = {
     try {
       await platformStorage.setItem(USER_KEY, JSON.stringify(user));
     } catch (error) {
-      console.error('Error saving user:', error);
+      logError('Error saving user', error);
     }
   },
 
@@ -241,7 +242,7 @@ export const storage = {
       const parsed = JSON.parse(userStr) as User;
       return parsed;
     } catch (error) {
-      console.error('Error getting user:', error);
+      logError('Error getting user', error);
       return null;
     }
   },
@@ -267,7 +268,7 @@ export const storage = {
         }
       }
     } catch (error) {
-      console.error('Error saving remember me preference:', error);
+      logError('Error saving remember me preference', error);
     }
   },
 
@@ -284,7 +285,7 @@ export const storage = {
         return value ? JSON.parse(value) : false;
       }
     } catch (error) {
-      console.error('Error getting remember me preference:', error);
+      logError('Error getting remember me preference', error);
       return false;
     }
   },
@@ -300,7 +301,7 @@ export const storage = {
         return await AsyncStorage.getItem(REMEMBERED_EMAIL_KEY);
       }
     } catch (error) {
-      console.error('Error getting remembered email:', error);
+      logError('Error getting remembered email', error);
       return null;
     }
   },
@@ -324,12 +325,12 @@ export const storage = {
         try {
           await SecureStore.deleteItemAsync(TOKEN_KEY);
         } catch (error) {
-          console.warn('Error deleting token from SecureStore:', error);
+          logWarning('Error deleting token from SecureStore', error);
         }
         try {
           await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
         } catch (error) {
-          console.warn('Error deleting refresh token from SecureStore:', error);
+          logWarning('Error deleting refresh token from SecureStore', error);
         }
         // Also clear from AsyncStorage (for migration/fallback)
         // Note: We keep remember me and email for convenience
@@ -338,7 +339,7 @@ export const storage = {
         // await AsyncStorage.multiRemove([REMEMBER_ME_KEY, REMEMBERED_EMAIL_KEY]);
       }
     } catch (error) {
-      console.error('Error clearing storage:', error);
+      logError('Error clearing storage', error);
     }
   },
 };

@@ -3,6 +3,8 @@
  * Handles JWT token decoding, expiration checking, and proactive refresh
  */
 
+import { logError } from './logger';
+
 export interface DecodedToken {
   userId?: string;
   email?: string;
@@ -20,7 +22,7 @@ export const decodeToken = (token: string): DecodedToken | null => {
     // JWT format: header.payload.signature
     const parts = token.split('.');
     if (parts.length !== 3) {
-      console.error('Invalid token format');
+      logError('Invalid token format');
       return null;
     }
 
@@ -37,7 +39,7 @@ export const decodeToken = (token: string): DecodedToken | null => {
     // Parse JSON
     return JSON.parse(decoded) as DecodedToken;
   } catch (error) {
-    console.error('Error decoding token:', error);
+    logError('Error decoding token', error);
     return null;
   }
 };

@@ -55,4 +55,17 @@ const UserSchema = new Schema<IUser>(
   }
 );
 
+// Database Indexes for Performance
+// Email index (unique) - Most common query field
+UserSchema.index({ email: 1 }, { unique: true });
+
+// CreatedAt index (descending) - For sorting by creation date
+UserSchema.index({ createdAt: -1 });
+
+// isVerified index - For filtering verified/unverified users
+UserSchema.index({ isVerified: 1 });
+
+// Compound index for common queries (e.g., find verified users sorted by creation date)
+UserSchema.index({ isVerified: 1, createdAt: -1 });
+
 export default mongoose.model<IUser>('User', UserSchema);
