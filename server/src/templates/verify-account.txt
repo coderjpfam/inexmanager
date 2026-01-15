@@ -1,0 +1,24 @@
+Hi {{name}},
+
+Thank you for signing up for Income & Expense Manager! We're excited to help you take control of your personal finances.
+
+To get started, please verify your email address by visiting: {{verifyLink}}
+
+This verification link will expire in 24 hours. If you didn't create an account with us, please ignore this email.
+
+Once verified, you'll be able to:
+- Track your income and expenses effortlessly
+- View detailed spending insights and trends
+- Set budgets and financial goals
+- Access your data from any device
+
+Best regards,
+The Income & Expense Manager Team
+
+Need help? Contact us at {{supportEmail}}
+
+{{companyAddress}}
+
+Privacy Policy: {{privacyPolicyLink}}
+Terms of Service: {{termsLink}}
+Unsubscribe: {{unsubscribeLink}}

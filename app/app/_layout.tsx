@@ -4,11 +4,13 @@ import { StatusBar } from 'expo-status-bar';
 import { Provider } from 'react-redux';
 import 'react-native-reanimated';
 
+import { useEffect } from 'react';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ToastConfig } from '@/components/toast-config';
 import { AuthGuard } from '@/components/auth-guard';
 import { AppErrorBoundary } from '@/components/error-boundary';
 import { NetworkStatus } from '@/components/network-status';
+import { initializeDeepLinking } from '@/utils/deep-linking';
 import { store } from '@/store';
 
 export const unstable_settings = {
@@ -17,6 +19,12 @@ export const unstable_settings = {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+
+  // Initialize deep linking
+  useEffect(() => {
+    const cleanup = initializeDeepLinking();
+    return cleanup;
+  }, []);
 
   return (
     <AppErrorBoundary>

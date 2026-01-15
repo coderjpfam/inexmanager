@@ -1,4 +1,6 @@
 import nodemailer from 'nodemailer';
+import * as fs from 'fs';
+import * as path from 'path';
 
 interface EmailTemplate {
   id: string;
@@ -12,275 +14,42 @@ interface TemplateOption {
   value: string;
 }
 
-// Email templates list
-export const EMAIL_TEMPLATES: EmailTemplate[] = [
-  {
-    id: 'verify-account',
-    subject: 'Verify Your Account - Income & Expense Manager',
-    html: `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Verify Your Account - Income & Expense Manager</title>
-      </head>
-      <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6;">
-        <table role="presentation" cellpadding="0" cellspacing="0" style="width: 100%; background-color: #f3f4f6;">
-          <tr>
-            <td style="padding: 40px 20px;">
-              <table role="presentation" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
-                
-                <!-- Header with Gradient -->
-                <tr>
-                  <td style="background: linear-gradient(135deg, #2563eb 0%, #16a34a 100%); padding: 40px 30px; text-align: center;">
-                    <div style="background-color: rgba(255, 255, 255, 0.2); width: 64px; height: 64px; border-radius: 16px; margin: 0 auto 20px; display: inline-flex; align-items: center; justify-content: center;">
-                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="12" y1="1" x2="12" y2="23"></line>
-                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-                      </svg>
-                    </div>
-                    <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: bold;">Income & Expense Manager</h1>
-                    <p style="color: rgba(255, 255, 255, 0.9); margin: 10px 0 0; font-size: 16px;">Take control of your finances</p>
-                  </td>
-                </tr>
+/**
+ * Load template file from templates directory
+ */
+const loadTemplate = (templateName: string, extension: 'html' | 'txt'): string => {
+  try {
+    const templatePath = path.join(__dirname, '..', 'templates', `${templateName}.${extension}`);
+    return fs.readFileSync(templatePath, 'utf-8');
+  } catch (error) {
+    console.error(`Error loading template ${templateName}.${extension}:`, error);
+    throw new Error(`Failed to load template: ${templateName}.${extension}`);
+  }
+};
 
-                <!-- Main Content -->
-                <tr>
-                  <td style="padding: 40px 30px;">
-                    <h2 style="color: #1f2937; margin: 0 0 20px; font-size: 24px; font-weight: bold;">Verify Your Email Address</h2>
-                    
-                    <p style="color: #4b5563; margin: 0 0 20px; font-size: 16px; line-height: 1.6;">
-                      Hi <strong>{{name}}</strong>,
-                    </p>
-                    
-                    <p style="color: #4b5563; margin: 0 0 20px; font-size: 16px; line-height: 1.6;">
-                      Thank you for signing up for Income & Expense Manager! We're excited to help you take control of your personal finances.
-                    </p>
-                    
-                    <p style="color: #4b5563; margin: 0 0 30px; font-size: 16px; line-height: 1.6;">
-                      To get started, please verify your email address by clicking the button below:
-                    </p>
+/**
+ * Email templates configuration
+ * Templates are loaded from external files in server/src/templates/
+ */
+const getEmailTemplates = (): EmailTemplate[] => {
+  return [
+    {
+      id: 'verify-account',
+      subject: 'Verify Your Account - Income & Expense Manager',
+      html: loadTemplate('verify-account', 'html'),
+      text: loadTemplate('verify-account', 'txt'),
+    },
+    {
+      id: 'reset-password',
+      subject: 'Reset Your Password - Income & Expense Manager',
+      html: loadTemplate('reset-password', 'html'),
+      text: loadTemplate('reset-password', 'txt'),
+    },
+  ];
+};
 
-                    <!-- Verification Button -->
-                    <table role="presentation" cellpadding="0" cellspacing="0" style="margin: 0 auto 30px;">
-                      <tr>
-                        <td style="border-radius: 8px; background: linear-gradient(135deg, #2563eb 0%, #16a34a 100%);">
-                          <a href="{{verifyLink}}" target="_blank" style="display: inline-block; padding: 16px 40px; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
-                            Verify Email Address
-                          </a>
-                        </td>
-                      </tr>
-                    </table>
-
-                    <p style="color: #6b7280; margin: 0 0 20px; font-size: 14px; line-height: 1.6;">
-                      Or copy and paste this link into your browser:
-                    </p>
-                    
-                    <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; margin: 0 0 30px; word-break: break-all;">
-                      <a href="{{verifyLink}}" style="color: #2563eb; text-decoration: none; font-size: 14px;">
-                        {{verifyLink}}
-                      </a>
-                    </div>
-
-                    <!-- Security Notice -->
-                    <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 0 0 30px; border-radius: 4px;">
-                      <p style="color: #92400e; margin: 0; font-size: 14px; line-height: 1.6;">
-                        <strong>Security Note:</strong> This verification link will expire in 24 hours. If you didn't create an account with us, please ignore this email.
-                      </p>
-                    </div>
-
-                    <p style="color: #4b5563; margin: 0 0 10px; font-size: 16px; line-height: 1.6;">
-                      Once verified, you'll be able to:
-                    </p>
-                    
-                    <ul style="color: #4b5563; margin: 0 0 30px 20px; font-size: 16px; line-height: 1.8; padding: 0;">
-                      <li>Track your income and expenses effortlessly</li>
-                      <li>View detailed spending insights and trends</li>
-                      <li>Set budgets and financial goals</li>
-                      <li>Access your data from any device</li>
-                    </ul>
-
-                    <p style="color: #4b5563; margin: 0; font-size: 16px; line-height: 1.6;">
-                      Best regards,<br>
-                      <strong>The Income & Expense Manager Team</strong>
-                    </p>
-                  </td>
-                </tr>
-
-                <!-- Footer -->
-                <tr>
-                  <td style="background-color: #f9fafb; padding: 30px; border-top: 1px solid #e5e7eb; text-align: center;">
-                    <p style="color: #6b7280; margin: 0 0 15px; font-size: 14px;">
-                      Need help? Contact us at 
-                      <a href="mailto:{{supportEmail}}" style="color: #2563eb; text-decoration: none;">{{supportEmail}}</a>
-                    </p>
-                    
-                    <div style="margin: 20px 0;">
-                      <a href="{{facebookLink}}" style="display: inline-block; margin: 0 8px; color: #6b7280; text-decoration: none;">
-                        <img src="https://cdn-icons-png.flaticon.com/512/124/124010.png" alt="Facebook" style="width: 24px; height: 24px;">
-                      </a>
-                      <a href="{{twitterLink}}" style="display: inline-block; margin: 0 8px; color: #6b7280; text-decoration: none;">
-                        <img src="https://cdn-icons-png.flaticon.com/512/124/124021.png" alt="Twitter" style="width: 24px; height: 24px;">
-                      </a>
-                      <a href="{{instagramLink}}" style="display: inline-block; margin: 0 8px; color: #6b7280; text-decoration: none;">
-                        <img src="https://cdn-icons-png.flaticon.com/512/124/124024.png" alt="Instagram" style="width: 24px; height: 24px;">
-                      </a>
-                    </div>
-
-                    <p style="color: #9ca3af; margin: 15px 0 0; font-size: 12px; line-height: 1.5;">
-                      © ${new Date().getFullYear()} Income & Expense Manager. All rights reserved.<br>
-                      {{companyAddress}}
-                    </p>
-                    
-                    <p style="color: #9ca3af; margin: 15px 0 0; font-size: 12px;">
-                      <a href="{{privacyPolicyLink}}" style="color: #6b7280; text-decoration: none; margin: 0 10px;">Privacy Policy</a>
-                      <a href="{{termsLink}}" style="color: #6b7280; text-decoration: none; margin: 0 10px;">Terms of Service</a>
-                      <a href="{{unsubscribeLink}}" style="color: #6b7280; text-decoration: none; margin: 0 10px;">Unsubscribe</a>
-                    </p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-        </table>
-      </body>
-      </html>
-    `,
-    text: `Hi {{name}},\n\nThank you for signing up for Income & Expense Manager! We're excited to help you take control of your personal finances.\n\nTo get started, please verify your email address by visiting: {{verifyLink}}\n\nThis verification link will expire in 24 hours. If you didn't create an account with us, please ignore this email.\n\nOnce verified, you'll be able to:\n- Track your income and expenses effortlessly\n- View detailed spending insights and trends\n- Set budgets and financial goals\n- Access your data from any device\n\nBest regards,\nThe Income & Expense Manager Team`,
-  },
-  {
-    id: 'reset-password',
-    subject: 'Reset Your Password - Income & Expense Manager',
-    html: `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Reset Your Password - Income & Expense Manager</title>
-      </head>
-      <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6;">
-        <table role="presentation" cellpadding="0" cellspacing="0" style="width: 100%; background-color: #f3f4f6;">
-          <tr>
-            <td style="padding: 40px 20px;">
-              <table role="presentation" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
-                
-                <!-- Header with Gradient -->
-                <tr>
-                  <td style="background: linear-gradient(135deg, #2563eb 0%, #16a34a 100%); padding: 40px 30px; text-align: center;">
-                    <div style="background-color: rgba(255, 255, 255, 0.2); width: 64px; height: 64px; border-radius: 16px; margin: 0 auto 20px; display: inline-flex; align-items: center; justify-content: center;">
-                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="12" y1="1" x2="12" y2="23"></line>
-                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-                      </svg>
-                    </div>
-                    <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: bold;">Income & Expense Manager</h1>
-                    <p style="color: rgba(255, 255, 255, 0.9); margin: 10px 0 0; font-size: 16px;">Take control of your finances</p>
-                  </td>
-                </tr>
-
-                <!-- Main Content -->
-                <tr>
-                  <td style="padding: 40px 30px;">
-                    <h2 style="color: #1f2937; margin: 0 0 20px; font-size: 24px; font-weight: bold;">Reset Your Password</h2>
-                    
-                    <p style="color: #4b5563; margin: 0 0 20px; font-size: 16px; line-height: 1.6;">
-                      Hi <strong>{{name}}</strong>,
-                    </p>
-                    
-                    <p style="color: #4b5563; margin: 0 0 20px; font-size: 16px; line-height: 1.6;">
-                      We received a request to reset your password for your Income & Expense Manager account. If you made this request, click the button below to create a new password.
-                    </p>
-
-                    <!-- Reset Password Button -->
-                    <table role="presentation" cellpadding="0" cellspacing="0" style="margin: 0 auto 30px;">
-                      <tr>
-                        <td style="border-radius: 8px; background: linear-gradient(135deg, #2563eb 0%, #16a34a 100%);">
-                          <a href="{{resetLink}}" target="_blank" style="display: inline-block; padding: 16px 40px; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
-                            Reset Password
-                          </a>
-                        </td>
-                      </tr>
-                    </table>
-
-                    <p style="color: #6b7280; margin: 0 0 20px; font-size: 14px; line-height: 1.6;">
-                      Or copy and paste this link into your browser:
-                    </p>
-                    
-                    <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; margin: 0 0 30px; word-break: break-all;">
-                      <a href="{{resetLink}}" style="color: #2563eb; text-decoration: none; font-size: 14px;">
-                        {{resetLink}}
-                      </a>
-                    </div>
-
-                    <!-- Security Notice -->
-                    <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 0 0 30px; border-radius: 4px;">
-                      <p style="color: #92400e; margin: 0; font-size: 14px; line-height: 1.6;">
-                        <strong>Security Note:</strong> This password reset link will expire in 1 hour. If you didn't request a password reset, please ignore this email or contact support if you have concerns.
-                      </p>
-                    </div>
-
-                    <p style="color: #4b5563; margin: 0 0 20px; font-size: 16px; line-height: 1.6;">
-                      For your security, we recommend:
-                    </p>
-                    
-                    <ul style="color: #4b5563; margin: 0 0 30px 20px; font-size: 16px; line-height: 1.8; padding: 0;">
-                      <li>Using a strong, unique password</li>
-                      <li>Not sharing your password with anyone</li>
-                      <li>Changing your password regularly</li>
-                      <li>Enabling two-factor authentication if available</li>
-                    </ul>
-
-                    <p style="color: #4b5563; margin: 0; font-size: 16px; line-height: 1.6;">
-                      Best regards,<br>
-                      <strong>The Income & Expense Manager Team</strong>
-                    </p>
-                  </td>
-                </tr>
-
-                <!-- Footer -->
-                <tr>
-                  <td style="background-color: #f9fafb; padding: 30px; border-top: 1px solid #e5e7eb; text-align: center;">
-                    <p style="color: #6b7280; margin: 0 0 15px; font-size: 14px;">
-                      Need help? Contact us at 
-                      <a href="mailto:{{supportEmail}}" style="color: #2563eb; text-decoration: none;">{{supportEmail}}</a>
-                    </p>
-                    
-                    <div style="margin: 20px 0;">
-                      <a href="{{facebookLink}}" style="display: inline-block; margin: 0 8px; color: #6b7280; text-decoration: none;">
-                        <img src="https://cdn-icons-png.flaticon.com/512/124/124010.png" alt="Facebook" style="width: 24px; height: 24px;">
-                      </a>
-                      <a href="{{twitterLink}}" style="display: inline-block; margin: 0 8px; color: #6b7280; text-decoration: none;">
-                        <img src="https://cdn-icons-png.flaticon.com/512/124/124021.png" alt="Twitter" style="width: 24px; height: 24px;">
-                      </a>
-                      <a href="{{instagramLink}}" style="display: inline-block; margin: 0 8px; color: #6b7280; text-decoration: none;">
-                        <img src="https://cdn-icons-png.flaticon.com/512/124/124024.png" alt="Instagram" style="width: 24px; height: 24px;">
-                      </a>
-                    </div>
-
-                    <p style="color: #9ca3af; margin: 15px 0 0; font-size: 12px; line-height: 1.5;">
-                      © ${new Date().getFullYear()} Income & Expense Manager. All rights reserved.<br>
-                      {{companyAddress}}
-                    </p>
-                    
-                    <p style="color: #9ca3af; margin: 15px 0 0; font-size: 12px;">
-                      <a href="{{privacyPolicyLink}}" style="color: #6b7280; text-decoration: none; margin: 0 10px;">Privacy Policy</a>
-                      <a href="{{termsLink}}" style="color: #6b7280; text-decoration: none; margin: 0 10px;">Terms of Service</a>
-                      <a href="{{unsubscribeLink}}" style="color: #6b7280; text-decoration: none; margin: 0 10px;">Unsubscribe</a>
-                    </p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-        </table>
-      </body>
-      </html>
-    `,
-    text: `Hi {{name}},\n\nWe received a request to reset your password for your Income & Expense Manager account. If you made this request, visit this link to reset your password: {{resetLink}}\n\nThis password reset link will expire in 1 hour. If you didn't request a password reset, please ignore this email or contact support if you have concerns.\n\nFor your security, we recommend:\n- Using a strong, unique password\n- Not sharing your password with anyone\n- Changing your password regularly\n- Enabling two-factor authentication if available\n\nBest regards,\nThe Income & Expense Manager Team`,
-  },
-];
+// Email templates list (loaded from external files)
+export const EMAIL_TEMPLATES: EmailTemplate[] = getEmailTemplates();
 
 // Create transporter
 const createTransporter = () => {
@@ -321,7 +90,7 @@ export const sendEmail = async (
 
     await transporter.sendMail(mailOptions);
     console.log(`Email sent successfully to ${to}`);
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error sending email:', error);
     throw new Error('Failed to send email');
   }
@@ -358,7 +127,7 @@ export const sendTemplatedEmail = async (
 
     // Send email using function 1
     await sendEmail(to, template.subject, html, text);
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error sending templated email:', error);
     throw error;
   }

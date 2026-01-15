@@ -2,6 +2,7 @@ import express, { Application, Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import compression from 'compression';
 import swaggerUi from 'swagger-ui-express';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
@@ -64,6 +65,9 @@ const corsOptions = {
 // Middleware
 // Security headers (must be first)
 app.use(helmet());
+
+// Compression middleware (compress responses)
+app.use(compression());
 
 // Request logging (after security, before other middleware)
 const isDevelopment = process.env.NODE_ENV === 'development';
