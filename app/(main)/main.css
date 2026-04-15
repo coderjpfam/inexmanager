@@ -1,0 +1,83 @@
+/* FinTrack main shell — complements Tailwind; nav + stats + motion */
+
+.main-app ::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.main-app ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.main-app ::-webkit-scrollbar-thumb {
+  background: #00c896;
+  border-radius: 99px;
+}
+
+.main-nav-item {
+  transition: all 0.2s ease;
+}
+
+.main-nav-item-active {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 200, 150, 0.15) 0%,
+    transparent 100%
+  );
+  border-left: 3px solid #00c896;
+}
+
+.main-nav-item:not(.main-nav-item-active):hover {
+  background: rgba(0, 200, 150, 0.06);
+}
+
+.main-card-lift {
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.main-card-lift:hover {
+  transform: translateY(-2px);
+}
+
+.main-progress-fill {
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.main-modal-overlay {
+  backdrop-filter: blur(6px);
+}
+
+@keyframes main-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.main-fade-up {
+  animation: main-fade-up 0.35s ease both;
+}
+
+.stat-income {
+  background: linear-gradient(135deg, #00c896 0%, #00a87c 100%);
+}
+
+.stat-expense {
+  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+}
+
+.stat-savings {
+  background: linear-gradient(135deg, #6c63ff 0%, #5a52e8 100%);
+}
+
+.stat-net {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+}
+
+.main-num {
+  font-family: var(--font-main-mono), ui-monospace, monospace;
+}
