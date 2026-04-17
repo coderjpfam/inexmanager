@@ -5,7 +5,6 @@ import {
   AuthFooter,
   AuthLogo,
   FieldError,
-  ServerErrorBanner,
   SocialSection,
 } from "@/components/auth/auth-ui";
 import {
@@ -14,24 +13,29 @@ import {
   AuthTextField,
 } from "@/components/auth/form-fields";
 import { isEmail } from "@/lib/auth-validation";
+import { setAuthToken } from "@/lib/auth-token";
+import { clearError } from "@/store/auth/auth.slice";
+import { signIn } from "@/store/auth/auth.thunk";
+import { useAppDispatch } from "@/store/hooks";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 export default function SignInPage() {
   const router = useRouter();
+  const dispatch = useAppDispatch();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
   const [emailErr, setEmailErr] = useState<string | null>(null);
   const [passwordErr, setPasswordErr] = useState<string | null>(null);
-  const [serverErr, setServerErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   function validate(): boolean {
     setEmailErr(null);
     setPasswordErr(null);
-    setServerErr(null);
+    dispatch(clearError());
     let ok = true;
     if (!email.trim()) {
       setEmailErr("Email is required");
@@ -50,23 +54,27 @@ export default function SignInPage() {
     return ok;
   }
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!validate()) return;
-    setLoading(true);
-    window.setTimeout(() => {
-      setLoading(false);
-      if (email.trim() === "wrong@test.com") {
-        setServerErr("Incorrect email or password. Please try again.");
-        return;
-      }
+    setSubmitting(true);
+    dispatch(clearError());
+    try {
+      const result = await dispatch(
+        signIn({ email: email.trim(), password }),
+      ).unwrap();
+      setAuthToken(result.token);
       try {
         localStorage.setItem("fintrack-remember", remember ? "1" : "0");
       } catch {
-        /* ignore quota / private mode */
+        /* ignore */
       }
       router.push("/dashboard");
-    }, 1600);
+    } catch {
+      /* rejected: message in Redux */
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -94,7 +102,7 @@ export default function SignInPage() {
               onChange={(v) => {
                 setEmail(v);
                 setEmailErr(null);
-                setServerErr(null);
+                dispatch(clearError());
               }}
               error={emailErr}
               icon="mail"
@@ -129,7 +137,7 @@ export default function SignInPage() {
               onChange={(v) => {
                 setPassword(v);
                 setPasswordErr(null);
-                setServerErr(null);
+                dispatch(clearError());
               }}
               error={passwordErr}
             />
@@ -138,14 +146,12 @@ export default function SignInPage() {
 
           <AuthRememberCheckbox checked={remember} onChange={setRemember} />
 
-          {serverErr && (
-            <div className="mt-2">
-              <ServerErrorBanner message={serverErr} />
-            </div>
-          )}
-
-          <button type="submit" className="auth-btn-primary mt-2" disabled={loading}>
-            {loading ? (
+          <button
+            type="submit"
+            className="auth-btn-primary mt-2"
+            disabled={submitting}
+          >
+            {submitting ? (
               <>
                 <span className="auth-spinner" aria-hidden />
                 <span className="sr-only">Signing in</span>

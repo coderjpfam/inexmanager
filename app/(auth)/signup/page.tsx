@@ -13,12 +13,18 @@ import {
   AuthTextField,
 } from "@/components/auth/form-fields";
 import { isEmail } from "@/lib/auth-validation";
+import { setAuthToken } from "@/lib/auth-token";
+import { clearError } from "@/store/auth/auth.slice";
+import { signUp } from "@/store/auth/auth.thunk";
+import { useAppDispatch } from "@/store/hooks";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 export default function SignUpPage() {
   const router = useRouter();
+  const dispatch = useAppDispatch();
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -29,7 +35,7 @@ export default function SignUpPage() {
   const [passwordErr, setPasswordErr] = useState<string | null>(null);
   const [confirmErr, setConfirmErr] = useState<string | null>(null);
   const [termsErr, setTermsErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   function clearFieldErrors() {
     setNameErr(null);
@@ -41,6 +47,7 @@ export default function SignUpPage() {
 
   function validate(): boolean {
     clearFieldErrors();
+    dispatch(clearError());
     let ok = true;
     if (!name.trim()) {
       setNameErr("Full name is required");
@@ -77,14 +84,27 @@ export default function SignUpPage() {
     return ok;
   }
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!validate()) return;
-    setLoading(true);
-    window.setTimeout(() => {
-      setLoading(false);
-      router.push("/signin");
-    }, 1800);
+    setSubmitting(true);
+    dispatch(clearError());
+    try {
+      const result = await dispatch(
+        signUp({
+          name: name.trim(),
+          email: email.trim(),
+          password,
+          confirmPassword: confirm,
+        }),
+      ).unwrap();
+      setAuthToken(result.token);
+      router.push("/dashboard");
+    } catch {
+      /* rejected */
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -112,6 +132,7 @@ export default function SignUpPage() {
               onChange={(v) => {
                 setName(v);
                 setNameErr(null);
+                dispatch(clearError());
               }}
               error={nameErr}
               icon="user"
@@ -129,6 +150,7 @@ export default function SignUpPage() {
               onChange={(v) => {
                 setEmail(v);
                 setEmailErr(null);
+                dispatch(clearError());
               }}
               error={emailErr}
               icon="mail"
@@ -145,6 +167,7 @@ export default function SignUpPage() {
               onChange={(v) => {
                 setPassword(v);
                 setPasswordErr(null);
+                dispatch(clearError());
               }}
               error={passwordErr}
               showStrength
@@ -161,6 +184,7 @@ export default function SignUpPage() {
               onChange={(v) => {
                 setConfirm(v);
                 setConfirmErr(null);
+                dispatch(clearError());
               }}
               error={confirmErr}
             />
@@ -181,8 +205,12 @@ export default function SignUpPage() {
             <FieldError message={termsErr} />
           </div>
 
-          <button type="submit" className="auth-btn-primary mt-2" disabled={loading}>
-            {loading ? (
+          <button
+            type="submit"
+            className="auth-btn-primary mt-2"
+            disabled={submitting}
+          >
+            {submitting ? (
               <>
                 <span className="auth-spinner" aria-hidden />
                 <span className="sr-only">Creating account</span>

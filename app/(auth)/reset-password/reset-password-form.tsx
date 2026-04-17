@@ -5,14 +5,19 @@ import {
   AuthFooter,
   AuthLogo,
   FieldError,
+  ServerErrorBanner,
 } from "@/components/auth/auth-ui";
 import { AuthPasswordField } from "@/components/auth/form-fields";
+import { clearError, clearResetMessage } from "@/store/auth/auth.slice";
+import { resetPassword } from "@/store/auth/auth.thunk";
+import { useAppDispatch } from "@/store/hooks";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 export function ResetPasswordForm() {
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
 
@@ -20,12 +25,19 @@ export function ResetPasswordForm() {
   const [confirm, setConfirm] = useState("");
   const [passwordErr, setPasswordErr] = useState<string | null>(null);
   const [confirmErr, setConfirmErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [linkErr, setLinkErr] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   function validate(): boolean {
     setPasswordErr(null);
     setConfirmErr(null);
+    setLinkErr(null);
+    dispatch(clearError());
     let ok = true;
+    if (!token?.trim()) {
+      setLinkErr("This link is missing a token. Open the link from your email.");
+      ok = false;
+    }
     if (!password) {
       setPasswordErr("Password is required");
       ok = false;
@@ -46,14 +58,26 @@ export function ResetPasswordForm() {
     return ok;
   }
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!validate()) return;
-    setLoading(true);
-    window.setTimeout(() => {
-      setLoading(false);
+    setSubmitting(true);
+    dispatch(clearError());
+    try {
+      await dispatch(
+        resetPassword({
+          token: token!,
+          newPassword: password,
+          confirmPassword: confirm,
+        }),
+      ).unwrap();
+      dispatch(clearResetMessage());
       router.push("/signin");
-    }, 1400);
+    } catch {
+      /* rejected */
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -96,6 +120,12 @@ export function ResetPasswordForm() {
             : "Choose a new password. If you opened this page without an email link, request a new reset from sign in."}
         </p>
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+          {linkErr && (
+            <div className="mt-0">
+              <ServerErrorBanner message={linkErr} />
+            </div>
+          )}
+
           <div>
             <AuthPasswordField
               label="New password"
@@ -105,6 +135,8 @@ export function ResetPasswordForm() {
               onChange={(v) => {
                 setPassword(v);
                 setPasswordErr(null);
+                dispatch(clearError());
+                setLinkErr(null);
               }}
               error={passwordErr}
               showStrength
@@ -121,14 +153,20 @@ export function ResetPasswordForm() {
               onChange={(v) => {
                 setConfirm(v);
                 setConfirmErr(null);
+                dispatch(clearError());
+                setLinkErr(null);
               }}
               error={confirmErr}
             />
             <FieldError message={confirmErr} />
           </div>
 
-          <button type="submit" className="auth-btn-primary" disabled={loading}>
-            {loading ? (
+          <button
+            type="submit"
+            className="auth-btn-primary"
+            disabled={submitting}
+          >
+            {submitting ? (
               <>
                 <span className="auth-spinner" aria-hidden />
                 <span className="sr-only">Updating password</span>

@@ -5,21 +5,25 @@ import {
   AuthFooter,
   AuthLogo,
   FieldError,
-  SuccessBanner,
 } from "@/components/auth/auth-ui";
 import { AuthTextField } from "@/components/auth/form-fields";
 import { isEmail } from "@/lib/auth-validation";
+import { clearError, clearForgotMessage } from "@/store/auth/auth.slice";
+import { forgotPassword } from "@/store/auth/auth.thunk";
+import { useAppDispatch } from "@/store/hooks";
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
 export default function ForgotPasswordPage() {
+  const dispatch = useAppDispatch();
+
   const [email, setEmail] = useState("");
   const [emailErr, setEmailErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   function validate(): boolean {
     setEmailErr(null);
+    dispatch(clearError());
     if (!email.trim()) {
       setEmailErr("Email is required");
       return false;
@@ -31,15 +35,20 @@ export default function ForgotPasswordPage() {
     return true;
   }
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!validate()) return;
-    setLoading(true);
-    window.setTimeout(() => {
-      setLoading(false);
-      setSent(true);
+    setSubmitting(true);
+    dispatch(clearForgotMessage());
+    dispatch(clearError());
+    try {
+      await dispatch(forgotPassword({ email: email.trim() })).unwrap();
       setEmail("");
-    }, 1400);
+    } catch {
+      /* rejected; toast from thunk */
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -90,6 +99,7 @@ export default function ForgotPasswordPage() {
               onChange={(v) => {
                 setEmail(v);
                 setEmailErr(null);
+                dispatch(clearError());
               }}
               error={emailErr}
               icon="mail"
@@ -97,14 +107,12 @@ export default function ForgotPasswordPage() {
             <FieldError message={emailErr} />
           </div>
 
-          {sent && (
-            <SuccessBanner>
-              ✓ Reset link sent! Check your inbox.
-            </SuccessBanner>
-          )}
-
-          <button type="submit" className="auth-btn-primary" disabled={loading}>
-            {loading ? (
+          <button
+            type="submit"
+            className="auth-btn-primary"
+            disabled={submitting}
+          >
+            {submitting ? (
               <>
                 <span className="auth-spinner" aria-hidden />
                 <span className="sr-only">Sending</span>

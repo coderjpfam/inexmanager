@@ -1,4 +1,5 @@
 import { FinanceProvider } from "@/components/main/finance-provider";
+import { MainAuthGate } from "@/components/main/main-auth-gate";
 import { MainShell } from "@/components/main/main-shell";
 import { JetBrains_Mono, Sora } from "next/font/google";
 import "./main.css";
@@ -24,7 +25,9 @@ export default function MainLayout({
       <div
         className={`${sora.variable} ${jetbrainsMono.variable} ${sora.className}`}
       >
-        <MainShell>{children}</MainShell>
+        <MainAuthGate>
+          <MainShell>{children}</MainShell>
+        </MainAuthGate>
       </div>
     </FinanceProvider>
   );

@@ -1,9 +1,25 @@
 "use client";
 
+import { clearAuthToken } from "@/lib/auth-token";
+import { logout } from "@/store/auth/auth.slice";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { AddTransactionModal } from "@/components/main/add-transaction-modal";
+
+function userInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return (
+      parts[0].charAt(0) + parts[parts.length - 1].charAt(0)
+    ).toUpperCase();
+  }
+  if (parts.length === 1 && parts[0].length >= 2) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  return "?";
+}
 
 const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -144,8 +160,21 @@ const NAV = [
 
 export function MainShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const dispatch = useAppDispatch();
+  const user = useAppSelector((s) => s.auth.user);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [addTxOpen, setAddTxOpen] = useState(false);
+
+  const displayName = user?.name ?? "Account";
+  const displayEmail = user?.email ?? "Signed in";
+  const initials = user?.name ? userInitials(user.name) : "—";
+
+  const handleSignOut = useCallback(() => {
+    clearAuthToken();
+    dispatch(logout());
+    router.push("/signin");
+  }, [dispatch, router]);
 
   const title = useMemo(
     () => PAGE_TITLES[pathname] ?? "FinTrack",
@@ -226,14 +255,21 @@ export function MainShell({ children }: { children: ReactNode }) {
 
         <div className="border-t border-[#E2E8F0] p-4 dark:border-[#2D3149]">
           <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#00C896] to-[#00A87C] text-xs font-bold text-white">
-              AK
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#00C896] to-[#00A87C] text-xs font-bold text-white">
+              {initials}
             </div>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-xs font-semibold">Alex Kumar</div>
-              <div className="text-[10px] text-[#64748B] dark:text-[#8892B0]">
-                Personal Account
+              <div className="truncate text-xs font-semibold">{displayName}</div>
+              <div className="truncate text-[10px] text-[#64748B] dark:text-[#8892B0]">
+                {displayEmail}
               </div>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="mt-1.5 text-[10px] font-semibold text-[#00C896] hover:underline"
+              >
+                Sign out
+              </button>
             </div>
           </div>
         </div>
