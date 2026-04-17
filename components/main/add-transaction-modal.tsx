@@ -1,6 +1,13 @@
 "use client";
 
-import { useFinance, type TxType } from "@/components/main/finance-provider";
+import { ACCOUNT_ICONS } from "@/lib/finance/constants";
+import type { TxType } from "@/components/main/finance-provider";
+import {
+  createTransaction,
+  fetchAccounts,
+  fetchCategories,
+} from "@/store/transactions/transactions.thunk";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { useEffect, useState } from "react";
 
 type Props = {
@@ -8,51 +15,75 @@ type Props = {
   onClose: () => void;
 };
 
+function accountEmoji(type: string): string {
+  return ACCOUNT_ICONS[type] ?? "💵";
+}
+
 export function AddTransactionModal({ open, onClose }: Props) {
-  const {
-    categories,
-    accounts,
-    addTransaction,
-    accountIcon,
-  } = useFinance();
+  const dispatch = useAppDispatch();
+  const categories = useAppSelector((s) => s.transactions.categories);
+  const accounts = useAppSelector((s) => s.transactions.accounts);
+
   const [txType, setTxType] = useState<TxType>("expense");
   const [amount, setAmount] = useState("");
   const [desc, setDesc] = useState("");
-  const [category, setCategory] = useState("");
-  const [account, setAccount] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [accountId, setAccountId] = useState("");
   const [date, setDate] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (open) {
       setDate(new Date().toISOString().split("T")[0]);
-      setAccount(accounts[0]?.name ?? "");
+      void dispatch(fetchAccounts());
     }
-  }, [open, accounts]);
+  }, [open, dispatch]);
+
+  useEffect(() => {
+    if (open) {
+      void dispatch(fetchCategories());
+    }
+  }, [open, dispatch]);
 
   useEffect(() => {
     const cats = categories.filter((c) => c.type === txType);
-    setCategory(cats[0]?.name ?? "");
+    setCategoryId(cats[0]?._id ?? "");
   }, [txType, categories]);
+
+  useEffect(() => {
+    if (open && accounts.length) {
+      setAccountId((id) => id || accounts[0]!._id);
+    }
+  }, [open, accounts]);
 
   const catOptions = categories.filter((c) => c.type === txType);
 
   if (!open) return null;
 
-  function submit() {
+  async function submit() {
     const n = parseFloat(amount);
     if (!n || !desc.trim()) return;
-    if (!category || !account) return;
-    addTransaction({
-      type: txType,
-      amount: n,
-      desc: desc.trim(),
-      category,
-      account,
-      date,
-    });
-    setAmount("");
-    setDesc("");
-    onClose();
+    if (!categoryId || !accountId) return;
+    setSubmitting(true);
+    try {
+      await dispatch(
+        createTransaction({
+          type: txType,
+          amount: n,
+          description: desc.trim(),
+          categoryId,
+          accountId,
+          date,
+        }),
+      ).unwrap();
+      setAmount("");
+      setDesc("");
+      onClose();
+    } catch {
+      /* toast in thunk */
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -146,15 +177,19 @@ export function AddTransactionModal({ open, onClose }: Props) {
                 Category
               </label>
               <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
                 className="w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2.5 text-sm focus:border-[#00C896] focus:outline-none dark:border-[#2D3149] dark:bg-[#13161F] dark:text-gray-100"
               >
-                {catOptions.map((c) => (
-                  <option key={c.id} value={c.name}>
-                    {c.icon} {c.name}
-                  </option>
-                ))}
+                {catOptions.length === 0 ? (
+                  <option value="">No categories — add in MongoDB</option>
+                ) : (
+                  catOptions.map((c) => (
+                    <option key={c._id} value={c._id}>
+                      {c.icon} {c.name}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
             <div>
@@ -162,15 +197,19 @@ export function AddTransactionModal({ open, onClose }: Props) {
                 Account
               </label>
               <select
-                value={account}
-                onChange={(e) => setAccount(e.target.value)}
+                value={accountId}
+                onChange={(e) => setAccountId(e.target.value)}
                 className="w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2.5 text-sm focus:border-[#00C896] focus:outline-none dark:border-[#2D3149] dark:bg-[#13161F] dark:text-gray-100"
               >
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.name}>
-                    {accountIcon(a.type)} {a.name}
-                  </option>
-                ))}
+                {accounts.length === 0 ? (
+                  <option value="">No accounts — add in MongoDB</option>
+                ) : (
+                  accounts.map((a) => (
+                    <option key={a._id} value={a._id}>
+                      {accountEmoji(a.type)} {a.name}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
           </div>
@@ -187,10 +226,11 @@ export function AddTransactionModal({ open, onClose }: Props) {
           </div>
           <button
             type="button"
-            onClick={submit}
-            className="w-full rounded-[10px] border border-[#00C896] bg-[#00C896] py-2.5 text-sm font-semibold text-white hover:bg-[#00A87C]"
+            onClick={() => void submit()}
+            disabled={submitting || !categoryId || !accountId}
+            className="w-full rounded-[10px] border border-[#00C896] bg-[#00C896] py-2.5 text-sm font-semibold text-white hover:bg-[#00A87C] disabled:opacity-50"
           >
-            Add Transaction
+            {submitting ? "Saving…" : "Add Transaction"}
           </button>
         </div>
       </div>

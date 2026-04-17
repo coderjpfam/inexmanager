@@ -1,53 +1,70 @@
 "use client";
 
-import { useFinance } from "@/components/main/finance-provider";
-import { useMemo, useState } from "react";
+import { fmt } from "@/lib/finance/format";
+import { ACCOUNT_ICONS } from "@/lib/finance/constants";
+import {
+  deleteTransaction,
+  fetchAccounts,
+  fetchCategories,
+  fetchTransactions,
+} from "@/store/transactions/transactions.thunk";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Filter = "all" | "income" | "expense";
 type Sort = "date-desc" | "date-asc" | "amount-desc" | "amount-asc";
 
 export function TransactionsView() {
-  const { transactions, categories, fmt, deleteTransaction } = useFinance();
+  const dispatch = useAppDispatch();
+  const { items, summary, pagination, status, query } = useAppSelector(
+    (s) => s.transactions,
+  );
+
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState<Sort>("date-desc");
+  const [page, setPage] = useState(1);
 
-  const filtered = useMemo(() => {
-    let txs = [...transactions];
-    if (filter !== "all") txs = txs.filter((t) => t.type === filter);
-    const q = search.toLowerCase();
-    if (q) {
-      txs = txs.filter(
-        (t) =>
-          t.desc.toLowerCase().includes(q) ||
-          t.category.toLowerCase().includes(q) ||
-          t.account.toLowerCase().includes(q),
-      );
-    }
-    txs.sort((a, b) => {
-      if (sort === "date-desc")
-        return new Date(b.date).getTime() - new Date(a.date).getTime();
-      if (sort === "date-asc")
-        return new Date(a.date).getTime() - new Date(b.date).getTime();
-      if (sort === "amount-desc") return b.amount - a.amount;
-      if (sort === "amount-asc") return a.amount - b.amount;
-      return 0;
-    });
-    return txs;
-  }, [transactions, filter, search, sort]);
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    return () => window.clearTimeout(t);
+  }, [search]);
 
-  const incomeSum = filtered
-    .filter((t) => t.type === "income")
-    .reduce((s, t) => s + t.amount, 0);
-  const expenseSum = filtered
-    .filter((t) => t.type === "expense")
-    .reduce((s, t) => s + t.amount, 0);
+  const load = useCallback(() => {
+    dispatch(
+      fetchTransactions({
+        page,
+        limit: query.limit,
+        sort,
+        search: debouncedSearch,
+        type: filter === "all" ? undefined : filter,
+      }),
+    );
+  }, [dispatch, page, query.limit, sort, debouncedSearch, filter]);
+
+  useEffect(() => {
+    dispatch(fetchAccounts());
+    dispatch(fetchCategories());
+  }, [dispatch]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filter, sort, debouncedSearch]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const incomeSum = summary?.totalIncome ?? 0;
+  const expenseSum = summary?.totalExpense ?? 0;
+  const count = pagination?.total ?? items.length;
 
   const groups = useMemo(() => {
-    const g: Record<string, typeof filtered> = {};
-    filtered.forEach((t) => {
+    const g: Record<string, typeof items> = {};
+    items.forEach((t) => {
       if (!g[t.date]) g[t.date] = [];
-      g[t.date].push(t);
+      g[t.date]!.push(t);
     });
     const dates = Object.keys(g).sort((a, b) =>
       sort.includes("asc")
@@ -55,7 +72,13 @@ export function TransactionsView() {
         : new Date(b).getTime() - new Date(a).getTime(),
     );
     return dates.map((d) => ({ date: d, txs: g[d]! }));
-  }, [filtered, sort]);
+  }, [items, sort]);
+
+  const handleDelete = (id: string) => {
+    void dispatch(deleteTransaction(id));
+  };
+
+  const totalPages = pagination?.totalPages ?? 1;
 
   return (
     <div className="main-fade-up space-y-5">
@@ -68,7 +91,7 @@ export function TransactionsView() {
           </div>
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-wide text-[#64748B] dark:text-[#8892B0]">
-              Income
+              Income (filtered)
             </div>
             <div className="main-num text-sm font-bold text-[#00C896]">{fmt(incomeSum)}</div>
           </div>
@@ -81,7 +104,7 @@ export function TransactionsView() {
           </div>
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-wide text-[#64748B] dark:text-[#8892B0]">
-              Expenses
+              Expenses (filtered)
             </div>
             <div className="main-num text-sm font-bold text-[#FF6B6B]">{fmt(expenseSum)}</div>
           </div>
@@ -94,9 +117,9 @@ export function TransactionsView() {
           </div>
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-wide text-[#64748B] dark:text-[#8892B0]">
-              Count
+              Total matching
             </div>
-            <div className="main-num text-sm font-bold text-[#6C63FF]">{filtered.length}</div>
+            <div className="main-num text-sm font-bold text-[#6C63FF]">{count}</div>
           </div>
         </div>
       </div>
@@ -113,7 +136,7 @@ export function TransactionsView() {
           </svg>
           <input
             type="text"
-            placeholder="Search by name, category, account…"
+            placeholder="Search description…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-xl border border-[#E2E8F0] bg-white py-2.5 pl-10 pr-4 text-sm dark:border-[#2D3149] dark:bg-[#1A1D27]"
@@ -142,6 +165,10 @@ export function TransactionsView() {
         </div>
       </div>
 
+      {status === "loading" && (
+        <div className="text-center text-xs text-[#64748B] dark:text-[#8892B0]">Loading…</div>
+      )}
+
       <div className="overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white dark:border-[#2D3149] dark:bg-[#1A1D27]">
         <div className="hidden grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 border-b border-[#E2E8F0] bg-[#F8FAFC] px-5 py-3 dark:border-[#2D3149] dark:bg-[#13161F] sm:grid">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-[#64748B] dark:text-[#8892B0]">
@@ -158,13 +185,13 @@ export function TransactionsView() {
           </div>
           <div className="w-6" />
         </div>
-        {filtered.length === 0 ? (
+        {items.length === 0 && status !== "loading" ? (
           <div className="p-10 text-center text-sm text-[#64748B] dark:text-[#8892B0]">
             No transactions match your filters
           </div>
         ) : (
           groups.map(({ date, txs }) => {
-            const d = new Date(date);
+            const d = new Date(date + "T00:00:00Z");
             const today = new Date().toISOString().split("T")[0];
             const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
             const label =
@@ -196,13 +223,16 @@ export function TransactionsView() {
                 </div>
                 <div className="divide-y divide-[#E2E8F0] dark:divide-[#2D3149]">
                   {txs.map((t) => {
-                    const cat = categories.find((c) => c.name === t.category);
-                    const icon = cat?.icon ?? (t.type === "income" ? "💰" : "💸");
-                    const dateStr = new Date(t.date).toLocaleDateString("en-IN", {
+                    const icon = t.type === "income" ? "💰" : "💸";
+                    const dateStr = new Date(t.date + "T00:00:00Z").toLocaleDateString("en-IN", {
                       day: "2-digit",
                       month: "short",
                       year: "numeric",
                     });
+                    const accIcon =
+                      /bank|sbi|hdfc|axis|icici/i.test(t.account)
+                        ? (ACCOUNT_ICONS.Bank ?? "🏦")
+                        : (ACCOUNT_ICONS.Cash ?? "💵");
                     return (
                       <div key={t.id}>
                         <div className="group hidden grid-cols-[2fr_1fr_1fr_1fr_auto] items-center gap-4 px-5 py-3.5 hover:bg-[#F8FAFC] dark:hover:bg-[#13161F] sm:grid">
@@ -233,7 +263,7 @@ export function TransactionsView() {
                             </span>
                           </div>
                           <div className="flex items-center gap-1.5 truncate text-xs text-[#64748B] dark:text-[#8892B0]">
-                            <span>{t.account.includes("SBI") ? "🏦" : "💵"}</span>
+                            <span>{accIcon}</span>
                             <span className="truncate">{t.account}</span>
                           </div>
                           <div
@@ -246,7 +276,7 @@ export function TransactionsView() {
                           </div>
                           <button
                             type="button"
-                            onClick={() => deleteTransaction(t.id)}
+                            onClick={() => handleDelete(t.id)}
                             className="flex h-6 w-6 items-center justify-center rounded-lg text-[#CBD5E1] opacity-0 transition-opacity hover:bg-[#FF6B6B12] hover:text-[#FF6B6B] group-hover:opacity-100"
                             aria-label="Delete"
                           >
@@ -290,7 +320,7 @@ export function TransactionsView() {
                           </div>
                           <button
                             type="button"
-                            onClick={() => deleteTransaction(t.id)}
+                            onClick={() => handleDelete(t.id)}
                             className="text-gray-300 hover:text-[#FF6B6B] dark:text-gray-600"
                           >
                             ✕
@@ -305,6 +335,30 @@ export function TransactionsView() {
           })
         )}
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3 text-sm">
+          <button
+            type="button"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            className="rounded-lg border border-[#E2E8F0] px-3 py-1.5 text-xs font-semibold disabled:opacity-40 dark:border-[#2D3149]"
+          >
+            Previous
+          </button>
+          <span className="text-xs text-[#64748B] dark:text-[#8892B0]">
+            Page {page} of {totalPages}
+          </span>
+          <button
+            type="button"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            className="rounded-lg border border-[#E2E8F0] px-3 py-1.5 text-xs font-semibold disabled:opacity-40 dark:border-[#2D3149]"
+          >
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 }

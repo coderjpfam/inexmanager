@@ -2,6 +2,9 @@
 
 import { clearAuthToken } from "@/lib/auth-token";
 import { logout } from "@/store/auth/auth.slice";
+import { clearAnalytics } from "@/store/analytics/analytics.slice";
+import { clearTransactions } from "@/store/transactions/transactions.slice";
+import { clearDashboard } from "@/store/dashboard/dashboard.slice";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -172,6 +175,9 @@ export function MainShell({ children }: { children: ReactNode }) {
 
   const handleSignOut = useCallback(() => {
     clearAuthToken();
+    dispatch(clearAnalytics());
+    dispatch(clearTransactions());
+    dispatch(clearDashboard());
     dispatch(logout());
     router.push("/signin");
   }, [dispatch, router]);
