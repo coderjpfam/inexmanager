@@ -2,11 +2,9 @@
 
 import { ACCOUNT_ICONS } from "@/lib/finance/constants";
 import type { TxType } from "@/components/main/finance-provider";
-import {
-  createTransaction,
-  fetchAccounts,
-  fetchCategories,
-} from "@/store/transactions/transactions.thunk";
+import { fetchAccounts } from "@/store/accounts/accounts.thunk";
+import { fetchCategories } from "@/store/categories/categories.thunk";
+import { createTransaction } from "@/store/transactions/transactions.thunk";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { useEffect, useState } from "react";
 
@@ -21,8 +19,8 @@ function accountEmoji(type: string): string {
 
 export function AddTransactionModal({ open, onClose }: Props) {
   const dispatch = useAppDispatch();
-  const categories = useAppSelector((s) => s.transactions.categories);
-  const accounts = useAppSelector((s) => s.transactions.accounts);
+  const categories = useAppSelector((s) => s.categories.items);
+  const accounts = useAppSelector((s) => s.accounts.items);
 
   const [txType, setTxType] = useState<TxType>("expense");
   const [amount, setAmount] = useState("");
@@ -182,7 +180,7 @@ export function AddTransactionModal({ open, onClose }: Props) {
                 className="w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2.5 text-sm focus:border-[#00C896] focus:outline-none dark:border-[#2D3149] dark:bg-[#13161F] dark:text-gray-100"
               >
                 {catOptions.length === 0 ? (
-                  <option value="">No categories — add in MongoDB</option>
+                  <option value="">No categories — add under Categories</option>
                 ) : (
                   catOptions.map((c) => (
                     <option key={c._id} value={c._id}>
@@ -202,7 +200,7 @@ export function AddTransactionModal({ open, onClose }: Props) {
                 className="w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2.5 text-sm focus:border-[#00C896] focus:outline-none dark:border-[#2D3149] dark:bg-[#13161F] dark:text-gray-100"
               >
                 {accounts.length === 0 ? (
-                  <option value="">No accounts — add in MongoDB</option>
+                  <option value="">No accounts — add one in Accounts</option>
                 ) : (
                   accounts.map((a) => (
                     <option key={a._id} value={a._id}>

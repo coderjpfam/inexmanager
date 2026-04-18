@@ -1,19 +1,22 @@
 "use client";
 
-import { useFinance } from "@/components/main/finance-provider";
-import { fmt, pct } from "@/lib/finance/format";
-import { useMemo, useState } from "react";
+import { fmt } from "@/lib/finance/format";
+import {
+  createLending,
+  deleteLending,
+  fetchLending,
+  payLending,
+  settleLending,
+} from "@/store/lending/lending.thunk";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { useEffect, useMemo, useState } from "react";
 
 type LendTab = "all" | "lend" | "borrow" | "settled";
 
 export function LendingView() {
-  const {
-    lending,
-    addLending,
-    settleDebt,
-    addPartialPayment,
-    deleteLending,
-  } = useFinance();
+  const dispatch = useAppDispatch();
+  const { items: allItems, summary, status, error } = useAppSelector((s) => s.lending);
+
   const [tab, setTab] = useState<LendTab>("all");
   const [open, setOpen] = useState(false);
   const [lendMode, setLendMode] = useState<"lend" | "borrow">("lend");
@@ -21,54 +24,75 @@ export function LendingView() {
   const [amount, setAmount] = useState("");
   const [due, setDue] = useState("");
   const [note, setNote] = useState("");
-  const [partial, setPartial] = useState<Record<number, string>>({});
+  const [partial, setPartial] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    void dispatch(fetchLending({}));
+  }, [dispatch]);
 
   const { totalOut, totalIn, activeLent, activeBorr } = useMemo(() => {
-    const lent = lending.filter((l) => l.type === "lend");
-    const borr = lending.filter((l) => l.type === "borrow");
+    const lent = allItems.filter((l) => l.direction === "lend");
+    const borr = allItems.filter((l) => l.direction === "borrow");
     const al = lent.filter((l) => l.status !== "Settled");
     const ab = borr.filter((l) => l.status !== "Settled");
-    const tout = al.reduce((s, l) => s + (l.amount - l.paid), 0);
-    const tin = ab.reduce((s, l) => s + (l.amount - l.paid), 0);
-    return { totalOut: tout, totalIn: tin, activeLent: al, activeBorr: ab };
-  }, [lending]);
+    return {
+      totalOut: summary.totalLentRemaining,
+      totalIn: summary.totalBorrowedRemaining,
+      activeLent: al,
+      activeBorr: ab,
+    };
+  }, [allItems, summary]);
 
-  const net = totalOut - totalIn;
+  const net = summary.netPosition;
 
   const items = useMemo(() => {
-    let list = [...lending];
-    if (tab === "lend") list = list.filter((l) => l.type === "lend" && l.status !== "Settled");
-    else if (tab === "borrow") list = list.filter((l) => l.type === "borrow" && l.status !== "Settled");
+    let list = [...allItems];
+    if (tab === "lend") list = list.filter((l) => l.direction === "lend" && l.status !== "Settled");
+    else if (tab === "borrow") list = list.filter((l) => l.direction === "borrow" && l.status !== "Settled");
     else if (tab === "settled") list = list.filter((l) => l.status === "Settled");
     else list = list.filter((l) => l.status !== "Settled");
     return list;
-  }, [lending, tab]);
+  }, [allItems, tab]);
 
   function openModal(mode: "lend" | "borrow") {
     setLendMode(mode);
-    setDue(new Date().toISOString().split("T")[0]);
+    setDue(new Date().toISOString().split("T")[0] ?? "");
     setOpen(true);
   }
 
-  function submitLend() {
+  async function submitLend() {
     const n = name.trim();
     const a = parseFloat(amount);
     if (!n || !a) return;
-    addLending({
-      type: lendMode,
-      name: n,
-      amount: a,
-      due: due || new Date().toISOString().split("T")[0],
-      note: note.trim(),
-    });
-    setName("");
-    setAmount("");
-    setNote("");
-    setOpen(false);
+    setSubmitting(true);
+    try {
+      await dispatch(
+        createLending({
+          direction: lendMode,
+          personName: n,
+          totalAmount: a,
+          dueDate: due || new Date().toISOString().split("T")[0]!,
+          ...(note.trim() ? { note: note.trim() } : {}),
+        }),
+      ).unwrap();
+      setName("");
+      setAmount("");
+      setNote("");
+      setOpen(false);
+    } finally {
+      setSubmitting(false);
+    }
   }
+
+  const loading = status === "loading" && allItems.length === 0;
 
   return (
     <div className="main-fade-up space-y-5">
+      {error && status === "failed" && (
+        <p className="rounded-xl border border-[#FF6B6B4D] bg-[#FF6B6B14] px-4 py-2 text-sm text-[#FF6B6B]">{error}</p>
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-2xl border border-[#E2E8F0] bg-white p-4 dark:border-[#2D3149] dark:bg-[#1A1D27]">
           <div className="mb-2 flex items-center justify-between">
@@ -114,11 +138,11 @@ export function LendingView() {
             </div>
           </div>
           <div
-            className={`main-num text-xl font-bold ${totalOut >= totalIn ? "text-[#00C896]" : "text-[#FF6B6B]"}`}
+            className={`main-num text-xl font-bold ${net >= 0 ? "text-[#00C896]" : "text-[#FF6B6B]"}`}
           >
             {fmt(Math.abs(net))}
           </div>
-          <div className="mt-1 text-xs text-[#64748B] dark:text-[#8892B0]">Lent minus borrowed</div>
+          <div className="mt-1 text-xs text-[#64748B] dark:text-[#8892B0]">Lent remaining minus borrowed remaining</div>
         </div>
       </div>
 
@@ -170,179 +194,190 @@ export function LendingView() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {items.length === 0 ? (
-          <div className="col-span-2 rounded-2xl border border-[#E2E8F0] bg-white py-12 text-center text-sm text-[#64748B] dark:border-[#2D3149] dark:bg-[#1A1D27] dark:text-[#8892B0]">
-            No records in this category
-          </div>
-        ) : (
-          items.map((l) => {
-            const rem = l.amount - l.paid;
-            const p = pct(l.paid, l.amount);
-            const isLend = l.type === "lend";
-            const isOverdue = l.status !== "Settled" && new Date(l.due) < new Date();
-            const dueDate = new Date(l.due).toLocaleDateString("en-IN", {
-              day: "2-digit",
-              month: "short",
-              year: "numeric",
-            });
-            const initials = l.name
-              .split(" ")
-              .map((n) => n[0])
-              .join("")
-              .toUpperCase()
-              .slice(0, 2);
-            const accentColor = isLend ? "#00C896" : "#6C63FF";
-            const accentBg = isLend ? "#00C89618" : "#6C63FF18";
+      {loading ? (
+        <p className="text-sm text-[#64748B]">Loading records…</p>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {items.length === 0 ? (
+            <div className="col-span-2 rounded-2xl border border-[#E2E8F0] bg-white py-12 text-center text-sm text-[#64748B] dark:border-[#2D3149] dark:bg-[#1A1D27] dark:text-[#8892B0]">
+              No records in this category
+            </div>
+          ) : (
+            items.map((l) => {
+              const rem = l.remainingAmount;
+              const p = l.percentagePaid;
+              const isLend = l.direction === "lend";
+              const isOverdueUi = l.isOverdue || l.status === "Overdue";
+              const dueDate = new Date(l.dueDate + "T00:00:00.000Z").toLocaleDateString("en-IN", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+              });
+              const initials = l.personName
+                .split(" ")
+                .map((n) => n[0])
+                .join("")
+                .toUpperCase()
+                .slice(0, 2);
+              const accentColor = isLend ? "#00C896" : "#6C63FF";
+              const accentBg = isLend ? "#00C89618" : "#6C63FF18";
 
-            return (
-              <div
-                key={l.id}
-                className="main-card-lift overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white dark:border-[#2D3149] dark:bg-[#1A1D27]"
-              >
-                <div className="h-1 w-full" style={{ background: accentColor }} />
-                <div className="p-5">
-                  <div className="mb-4 flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="flex h-10 w-10 items-center justify-center rounded-xl text-sm font-bold text-white"
-                        style={{ background: accentColor }}
-                      >
-                        {initials}
+              return (
+                <div
+                  key={l._id}
+                  className="main-card-lift overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white dark:border-[#2D3149] dark:bg-[#1A1D27]"
+                >
+                  <div className="h-1 w-full" style={{ background: accentColor }} />
+                  <div className="p-5">
+                    <div className="mb-4 flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="flex h-10 w-10 items-center justify-center rounded-xl text-sm font-bold text-white"
+                          style={{ background: accentColor }}
+                        >
+                          {initials}
+                        </div>
+                        <div>
+                          <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">{l.personName}</div>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                isLend ? "bg-[#00C89626] text-[#00C896]" : "bg-[#6C63FF26] text-[#6C63FF]"
+                              }`}
+                            >
+                              {isLend ? "↑ Lent" : "↓ Borrowed"}
+                            </span>
+                            {l.status === "Settled" ? (
+                              <span className="rounded-full bg-[#64748B26] px-2 py-0.5 text-[11px] font-semibold text-[#64748B]">
+                                Settled
+                              </span>
+                            ) : isOverdueUi ? (
+                              <span className="rounded-full bg-[#FF6B6B26] px-2 py-0.5 text-[11px] font-semibold text-[#FF6B6B]">
+                                Overdue
+                              </span>
+                            ) : (
+                              <span className="rounded-full bg-[#F59E0B26] px-2 py-0.5 text-[11px] font-semibold text-[#F59E0B]">
+                                Active
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">{l.name}</div>
-                        <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                              isLend ? "bg-[#00C89626] text-[#00C896]" : "bg-[#6C63FF26] text-[#6C63FF]"
-                            }`}
+                      <div className="text-right">
+                        <div className="main-num text-lg font-bold" style={{ color: accentColor }}>
+                          {fmt(l.totalAmount)}
+                        </div>
+                        <div className="mt-0.5 text-[10px] text-[#64748B] dark:text-[#8892B0]">Total amount</div>
+                      </div>
+                    </div>
+
+                    <div className="mb-4 rounded-xl p-3" style={{ background: accentBg }}>
+                      <div className="mb-2 flex justify-between text-xs">
+                        <span className="text-[#64748B] dark:text-[#8892B0]">Repaid</span>
+                        <span className="main-num font-semibold" style={{ color: accentColor }}>
+                          {p}%
+                        </span>
+                      </div>
+                      <div className="mb-2 h-2 overflow-hidden rounded-full bg-white/50 dark:bg-black/20">
+                        <div
+                          className="main-progress-fill h-full rounded-full"
+                          style={{ width: `${Math.min(100, p)}%`, background: accentColor }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="main-num font-medium" style={{ color: accentColor }}>
+                          {fmt(l.paidAmount)} paid
+                        </span>
+                        <span className="main-num text-[#64748B] dark:text-[#8892B0]">{fmt(rem)} left</span>
+                      </div>
+                    </div>
+
+                    <div className="mb-4 flex items-center justify-between text-xs text-[#64748B] dark:text-[#8892B0]">
+                      <div className="flex items-center gap-1.5">
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <span className={isOverdueUi && l.status !== "Settled" ? "font-semibold text-[#FF6B6B]" : ""}>
+                          Due {dueDate}
+                        </span>
+                      </div>
+                      {l.note ? (
+                        <span className="max-w-[140px] truncate italic">&quot;{l.note}&quot;</span>
+                      ) : null}
+                    </div>
+
+                    {l.status !== "Settled" ? (
+                      <>
+                        <div className="mb-2 flex gap-2">
+                          <div className="relative flex-1">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-[#64748B]">
+                              ₹
+                            </span>
+                            <input
+                              type="number"
+                              min={1}
+                              max={rem}
+                              placeholder="Amount paid"
+                              value={partial[l._id] ?? ""}
+                              onChange={(e) =>
+                                setPartial((prev) => ({ ...prev, [l._id]: e.target.value }))
+                              }
+                              className="main-num w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] py-2 pl-7 pr-3 text-xs dark:border-[#2D3149] dark:bg-[#0F1117]"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const v = parseFloat(partial[l._id] ?? "");
+                              if (!v || v <= 0) return;
+                              const today = new Date().toISOString().split("T")[0]!;
+                              void dispatch(
+                                payLending({
+                                  id: l._id,
+                                  amount: v,
+                                  date: today,
+                                }),
+                              );
+                              setPartial((prev) => ({ ...prev, [l._id]: "" }));
+                            }}
+                            className="rounded-[10px] border border-[#00C896] bg-[#00C896] px-3 py-2 text-xs font-semibold text-white"
                           >
-                            {isLend ? "↑ Lent" : "↓ Borrowed"}
-                          </span>
-                          {l.status === "Settled" ? (
-                            <span className="rounded-full bg-[#64748B26] px-2 py-0.5 text-[11px] font-semibold text-[#64748B]">
-                              Settled
-                            </span>
-                          ) : isOverdue ? (
-                            <span className="rounded-full bg-[#FF6B6B26] px-2 py-0.5 text-[11px] font-semibold text-[#FF6B6B]">
-                              Overdue
-                            </span>
-                          ) : (
-                            <span className="rounded-full bg-[#F59E0B26] px-2 py-0.5 text-[11px] font-semibold text-[#F59E0B]">
-                              Active
-                            </span>
-                          )}
+                            + Pay
+                          </button>
                         </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="main-num text-lg font-bold" style={{ color: accentColor }}>
-                        {fmt(l.amount)}
-                      </div>
-                      <div className="mt-0.5 text-[10px] text-[#64748B] dark:text-[#8892B0]">Total amount</div>
-                    </div>
-                  </div>
-
-                  <div className="mb-4 rounded-xl p-3" style={{ background: accentBg }}>
-                    <div className="mb-2 flex justify-between text-xs">
-                      <span className="text-[#64748B] dark:text-[#8892B0]">Repaid</span>
-                      <span className="main-num font-semibold" style={{ color: accentColor }}>
-                        {p}%
-                      </span>
-                    </div>
-                    <div className="mb-2 h-2 overflow-hidden rounded-full bg-white/50 dark:bg-black/20">
-                      <div
-                        className="main-progress-fill h-full rounded-full"
-                        style={{ width: `${p}%`, background: accentColor }}
-                      />
-                    </div>
-                    <div className="flex justify-between text-xs">
-                      <span className="main-num font-medium" style={{ color: accentColor }}>
-                        {fmt(l.paid)} paid
-                      </span>
-                      <span className="main-num text-[#64748B] dark:text-[#8892B0]">{fmt(rem)} left</span>
-                    </div>
-                  </div>
-
-                  <div className="mb-4 flex items-center justify-between text-xs text-[#64748B] dark:text-[#8892B0]">
-                    <div className="flex items-center gap-1.5">
-                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      <span className={isOverdue && l.status !== "Settled" ? "font-semibold text-[#FF6B6B]" : ""}>
-                        Due {dueDate}
-                      </span>
-                    </div>
-                    {l.note ? (
-                      <span className="max-w-[140px] truncate italic">&quot;{l.note}&quot;</span>
-                    ) : null}
-                  </div>
-
-                  {l.status !== "Settled" ? (
-                    <>
-                      <div className="mb-2 flex gap-2">
-                        <div className="relative flex-1">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-[#64748B]">
-                            ₹
-                          </span>
-                          <input
-                            type="number"
-                            min={1}
-                            max={rem}
-                            placeholder="Amount paid"
-                            value={partial[l.id] ?? ""}
-                            onChange={(e) =>
-                              setPartial((prev) => ({ ...prev, [l.id]: e.target.value }))
-                            }
-                            className="main-num w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] py-2 pl-7 pr-3 text-xs dark:border-[#2D3149] dark:bg-[#0F1117]"
-                          />
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void dispatch(settleLending({ id: l._id }))}
+                            className="flex-1 rounded-[10px] border py-2 text-xs font-semibold"
+                            style={{ borderColor: `${accentColor}40`, color: accentColor }}
+                          >
+                            Mark Settled
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void dispatch(deleteLending(l._id))}
+                            className="rounded-[10px] border border-[#FF6B6B4D] px-3 py-2 text-xs font-semibold text-[#FF6B6B]"
+                          >
+                            Delete
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const v = parseFloat(partial[l.id] ?? "");
-                            if (!v || v <= 0) return;
-                            addPartialPayment(l.id, v);
-                            setPartial((prev) => ({ ...prev, [l.id]: "" }));
-                          }}
-                          className="rounded-[10px] border border-[#00C896] bg-[#00C896] px-3 py-2 text-xs font-semibold text-white"
-                        >
-                          + Pay
-                        </button>
+                      </>
+                    ) : (
+                      <div className="flex items-center justify-center gap-1.5 rounded-xl bg-[#00C89612] py-1.5 text-xs font-semibold text-[#00C896]">
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Fully settled
                       </div>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => settleDebt(l.id)}
-                          className="flex-1 rounded-[10px] border py-2 text-xs font-semibold"
-                          style={{ borderColor: `${accentColor}40`, color: accentColor }}
-                        >
-                          Mark Settled
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => deleteLending(l.id)}
-                          className="rounded-[10px] border border-[#FF6B6B4D] px-3 py-2 text-xs font-semibold text-[#FF6B6B]"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex items-center justify-center gap-1.5 rounded-xl bg-[#00C89612] py-1.5 text-xs font-semibold text-[#00C896]">
-                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                      </svg>
-                      Fully settled
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })
-        )}
-      </div>
+              );
+            })
+          )}
+        </div>
+      )}
 
       {open && (
         <div
@@ -397,10 +432,11 @@ export function LendingView() {
               </div>
               <button
                 type="button"
-                onClick={submitLend}
-                className="w-full rounded-[10px] bg-[#00C896] py-2.5 text-sm font-semibold text-white hover:bg-[#00A87C]"
+                disabled={submitting}
+                onClick={() => void submitLend()}
+                className="w-full rounded-[10px] bg-[#00C896] py-2.5 text-sm font-semibold text-white hover:bg-[#00A87C] disabled:opacity-60"
               >
-                Save Record
+                {submitting ? "Saving…" : "Save Record"}
               </button>
             </div>
           </div>

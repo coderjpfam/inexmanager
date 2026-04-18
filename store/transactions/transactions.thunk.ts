@@ -3,12 +3,14 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import { apiClient } from "@/lib/api-client";
 import type {
-  AccountOption,
-  CategoryOption,
   TransactionsListPayload,
   TransactionsQuery,
   TransactionsSliceState,
 } from "./transactions.types";
+import type { RootState } from "@/store/root-state";
+import { fetchAccounts } from "@/store/accounts/accounts.thunk";
+import { fetchBudgets } from "@/store/budgets/budgets.thunk";
+import { fetchCategories } from "@/store/categories/categories.thunk";
 import type { TransactionApiRow } from "@/lib/transactions/serialize";
 
 type V1Fail = { success: false; error: { message: string; code?: string } };
@@ -85,48 +87,6 @@ export const fetchTransactions = createAsyncThunk<
   }
 });
 
-export const fetchCategories = createAsyncThunk<
-  CategoryOption[],
-  void,
-  { rejectValue: string }
->("transactions/fetchCategories", async (_, { rejectWithValue }) => {
-  try {
-    const res = await apiClient.get<{ success: true; data: CategoryOption[] }>(
-      "/api/categories",
-    );
-    if (!res.data.success) return rejectWithValue("Invalid response");
-    return res.data.data;
-  } catch (e) {
-    let msg = "Could not load categories";
-    if (axios.isAxiosError(e)) {
-      const d = e.response?.data as V1Fail | undefined;
-      if (d?.error?.message) msg = d.error.message;
-    }
-    return rejectWithValue(msg);
-  }
-});
-
-export const fetchAccounts = createAsyncThunk<
-  AccountOption[],
-  void,
-  { rejectValue: string }
->("transactions/fetchAccounts", async (_, { rejectWithValue }) => {
-  try {
-    const res = await apiClient.get<{ success: true; data: AccountOption[] }>(
-      "/api/accounts",
-    );
-    if (!res.data.success) return rejectWithValue("Invalid response");
-    return res.data.data;
-  } catch (e) {
-    let msg = "Could not load accounts";
-    if (axios.isAxiosError(e)) {
-      const d = e.response?.data as V1Fail | undefined;
-      if (d?.error?.message) msg = d.error.message;
-    }
-    return rejectWithValue(msg);
-  }
-});
-
 export type CreateTransactionInput = {
   type: "income" | "expense";
   amount: number;
@@ -141,7 +101,7 @@ export type CreateTransactionInput = {
 export const createTransaction = createAsyncThunk<
   boolean,
   CreateTransactionInput,
-  { rejectValue: string; state: { transactions: TransactionsSliceState } }
+  { rejectValue: string; state: RootState }
 >("transactions/create", async (payload, { dispatch, getState, rejectWithValue }) => {
   try {
     await apiClient.post("/api/transactions", {
@@ -158,6 +118,9 @@ export const createTransaction = createAsyncThunk<
     });
     const q = getState().transactions.query;
     await dispatch(fetchTransactions(q)).unwrap();
+    await dispatch(fetchAccounts()).unwrap();
+    await dispatch(fetchBudgets()).unwrap();
+    await dispatch(fetchCategories()).unwrap();
     if (typeof window !== "undefined") toast.success("Transaction added");
     return true;
   } catch (e) {
@@ -174,12 +137,15 @@ export const createTransaction = createAsyncThunk<
 export const deleteTransaction = createAsyncThunk<
   boolean,
   string,
-  { rejectValue: string; state: { transactions: TransactionsSliceState } }
+  { rejectValue: string; state: RootState }
 >("transactions/delete", async (id, { dispatch, getState, rejectWithValue }) => {
   try {
     await apiClient.delete(`/api/transactions/${id}`);
     const q = getState().transactions.query;
     await dispatch(fetchTransactions(q)).unwrap();
+    await dispatch(fetchAccounts()).unwrap();
+    await dispatch(fetchBudgets()).unwrap();
+    await dispatch(fetchCategories()).unwrap();
     if (typeof window !== "undefined") toast.success("Transaction removed");
     return true;
   } catch (e) {

@@ -2,12 +2,9 @@
 
 import { fmt } from "@/lib/finance/format";
 import { ACCOUNT_ICONS } from "@/lib/finance/constants";
-import {
-  deleteTransaction,
-  fetchAccounts,
-  fetchCategories,
-  fetchTransactions,
-} from "@/store/transactions/transactions.thunk";
+import { fetchAccounts } from "@/store/accounts/accounts.thunk";
+import { fetchCategories } from "@/store/categories/categories.thunk";
+import { deleteTransaction, fetchTransactions } from "@/store/transactions/transactions.thunk";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { useCallback, useEffect, useMemo, useState } from "react";
 

@@ -1,6 +1,7 @@
 import type { TransactionApiRow } from "@/lib/transactions/serialize";
 
 export type { TransactionApiRow };
+export type { CategoryOption } from "@/store/categories/categories.types";
 
 export type UiTransaction = {
   id: string;
@@ -11,20 +12,6 @@ export type UiTransaction = {
   amount: number;
   date: string;
   categoryIcon?: string;
-};
-
-export type CategoryOption = {
-  _id: string;
-  name: string;
-  type: "income" | "expense";
-  icon: string;
-};
-
-export type AccountOption = {
-  _id: string;
-  name: string;
-  type: string;
-  balance: number;
 };
 
 export type TransactionsQuery = {
@@ -56,8 +43,6 @@ export type TransactionsSliceState = {
   pagination: TransactionsListPayload["pagination"] | null;
   summary: TransactionsListPayload["summary"] | null;
   query: TransactionsQuery;
-  categories: CategoryOption[];
-  accounts: AccountOption[];
   status: "idle" | "loading" | "succeeded" | "failed";
   error: string | null;
 };

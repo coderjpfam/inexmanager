@@ -1,17 +1,31 @@
 "use client";
 
-import { useFinance } from "@/components/main/finance-provider";
-import { useMemo, useState } from "react";
+import { fmt } from "@/lib/finance/format";
+import {
+  createCategory,
+  deleteCategory,
+  fetchCategories,
+} from "@/store/categories/categories.thunk";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { useEffect, useMemo, useState } from "react";
 
 type CatTab = "all" | "income" | "expense";
 
 export function CategoriesView() {
-  const { categories, transactions, fmt, addCategory, deleteCategory } = useFinance();
+  const dispatch = useAppDispatch();
+  const { items: categories, status, error } = useAppSelector((s) => s.categories);
+
   const [tab, setTab] = useState<CatTab>("all");
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [icon, setIcon] = useState("📌");
+  const [color, setColor] = useState("");
   const [catType, setCatType] = useState<"income" | "expense">("income");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    void dispatch(fetchCategories({}));
+  }, [dispatch]);
 
   const { total, incomeN, expenseN } = useMemo(() => {
     const inc = categories.filter((c) => c.type === "income").length;
@@ -25,17 +39,36 @@ export function CategoriesView() {
     return categories;
   }, [categories, tab]);
 
-  function submit() {
+  async function submit() {
     const n = name.trim();
     if (!n) return;
-    addCategory({ name: n, type: catType, icon: icon || "📌" });
-    setName("");
-    setIcon("📌");
-    setOpen(false);
+    setSubmitting(true);
+    try {
+      await dispatch(
+        createCategory({
+          name: n,
+          type: catType,
+          icon: icon || "📌",
+          ...(color.trim() ? { color: color.trim() } : {}),
+        }),
+      ).unwrap();
+      setName("");
+      setIcon("📌");
+      setColor("");
+      setOpen(false);
+    } finally {
+      setSubmitting(false);
+    }
   }
+
+  const loading = status === "loading" && categories.length === 0;
 
   return (
     <div className="main-fade-up space-y-5">
+      {error && status === "failed" && (
+        <p className="rounded-xl border border-[#FF6B6B4D] bg-[#FF6B6B14] px-4 py-2 text-sm text-[#FF6B6B]">{error}</p>
+      )}
+
       <div className="grid grid-cols-3 gap-4">
         <div className="flex items-center gap-4 rounded-2xl border border-[#E2E8F0] bg-white p-4 dark:border-[#2D3149] dark:bg-[#1A1D27]">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#6C63FF15]">
@@ -109,97 +142,91 @@ export function CategoriesView() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {visible.length === 0 ? (
-          <div className="col-span-3 flex flex-col items-center justify-center rounded-2xl border border-[#E2E8F0] bg-white py-16 dark:border-[#2D3149] dark:bg-[#1A1D27]">
-            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#F0F4F8] text-3xl dark:bg-[#0F1117]">
-              {tab === "income" ? "💰" : tab === "expense" ? "💸" : "🏷️"}
+      {loading ? (
+        <p className="text-sm text-[#64748B]">Loading categories…</p>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {visible.length === 0 ? (
+            <div className="col-span-3 flex flex-col items-center justify-center rounded-2xl border border-[#E2E8F0] bg-white py-16 dark:border-[#2D3149] dark:bg-[#1A1D27]">
+              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#F0F4F8] text-3xl dark:bg-[#0F1117]">
+                {tab === "income" ? "💰" : tab === "expense" ? "💸" : "🏷️"}
+              </div>
+              <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">
+                {tab === "all" ? "No categories yet" : `No ${tab} categories yet`}
+              </p>
+              <p className="mt-1 text-xs text-[#64748B] dark:text-[#8892B0]">Click &quot;New Category&quot; to add one</p>
             </div>
-            <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">
-              {tab === "all" ? "No categories yet" : `No ${tab} categories yet`}
-            </p>
-            <p className="mt-1 text-xs text-[#64748B] dark:text-[#8892B0]">Click &quot;New Category&quot; to add one</p>
-          </div>
-        ) : (
-          visible.map((c) => {
-            const isIncome = c.type === "income";
-            const accentColor = isIncome ? "#00C896" : "#FF6B6B";
-            const accentBg = isIncome ? "#00C89612" : "#FF6B6B12";
-            const txCount = transactions.filter((t) => t.category === c.name).length;
-            const totalAmt = transactions
-              .filter((t) => t.category === c.name)
-              .reduce((s, t) => s + t.amount, 0);
-            const lastTx = [...transactions]
-              .filter((t) => t.category === c.name)
-              .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
-            const lastUsed = lastTx
-              ? new Date(lastTx.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })
-              : "Never used";
+          ) : (
+            visible.map((c) => {
+              const isIncome = c.type === "income";
+              const accentColor = c.color ?? (isIncome ? "#00C896" : "#FF6B6B");
+              const accentBg = isIncome ? "#00C89612" : "#FF6B6B12";
 
-            return (
-              <div
-                key={c.id}
-                className="group overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white dark:border-[#2D3149] dark:bg-[#1A1D27]"
-              >
-                <div className="h-1 w-full" style={{ background: accentColor }} />
-                <div className="p-5">
-                  <div className="mb-4 flex items-start justify-between">
-                    <div
-                      className="flex h-12 w-12 items-center justify-center rounded-2xl text-2xl"
-                      style={{ background: accentBg }}
-                    >
-                      {c.icon}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                          isIncome ? "bg-[#00C89626] text-[#00C896]" : "bg-[#FF6B6B26] text-[#FF6B6B]"
-                        }`}
+              return (
+                <div
+                  key={c._id}
+                  className="group overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white dark:border-[#2D3149] dark:bg-[#1A1D27]"
+                >
+                  <div className="h-1 w-full" style={{ background: accentColor }} />
+                  <div className="p-5">
+                    <div className="mb-4 flex items-start justify-between">
+                      <div
+                        className="flex h-12 w-12 items-center justify-center rounded-2xl text-2xl"
+                        style={{ background: accentBg }}
                       >
-                        {isIncome ? "Income" : "Expense"}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => deleteCategory(c.id)}
-                        className="flex h-7 w-7 items-center justify-center rounded-lg text-[#CBD5E1] opacity-0 transition-opacity hover:bg-[#FF6B6B12] hover:text-[#FF6B6B] group-hover:opacity-100 dark:text-[#4B5563]"
-                        aria-label="Delete category"
-                      >
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                  <div className="mb-3 text-sm font-bold text-gray-900 dark:text-gray-100">{c.name}</div>
-                  <div className="mb-3 grid grid-cols-2 gap-2">
-                    <div className="rounded-xl p-2.5" style={{ background: accentBg }}>
-                      <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#64748B] dark:text-[#8892B0]">
-                        Total
+                        {c.icon}
                       </div>
-                      <div className="main-num text-sm font-bold" style={{ color: accentColor }}>
-                        {fmt(totalAmt)}
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                            isIncome ? "bg-[#00C89626] text-[#00C896]" : "bg-[#FF6B6B26] text-[#FF6B6B]"
+                          }`}
+                        >
+                          {isIncome ? "Income" : "Expense"}
+                        </span>
+                        {c.isDefault ? (
+                          <span className="rounded-full bg-[#64748B26] px-2 py-0.5 text-[10px] font-semibold text-[#64748B]">
+                            Default
+                          </span>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => void dispatch(deleteCategory(c._id))}
+                          className="flex h-7 w-7 items-center justify-center rounded-lg text-[#CBD5E1] opacity-0 transition-opacity hover:bg-[#FF6B6B12] hover:text-[#FF6B6B] group-hover:opacity-100 dark:text-[#4B5563]"
+                          aria-label="Delete category"
+                        >
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
                       </div>
                     </div>
-                    <div className="rounded-xl bg-[#F8FAFC] p-2.5 dark:bg-[#0F1117]">
-                      <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#64748B] dark:text-[#8892B0]">
-                        Transactions
+                    <div className="mb-3 text-sm font-bold text-gray-900 dark:text-gray-100">{c.name}</div>
+                    <div className="mb-3 grid grid-cols-2 gap-2">
+                      <div className="rounded-xl p-2.5" style={{ background: accentBg }}>
+                        <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#64748B] dark:text-[#8892B0]">
+                          Total
+                        </div>
+                        <div className="main-num text-sm font-bold" style={{ color: accentColor }}>
+                          {fmt(c.totalAmount)}
+                        </div>
                       </div>
-                      <div className="main-num text-sm font-bold text-gray-800 dark:text-gray-100">{txCount}</div>
+                      <div className="rounded-xl bg-[#F8FAFC] p-2.5 dark:bg-[#0F1117]">
+                        <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#64748B] dark:text-[#8892B0]">
+                          Transactions
+                        </div>
+                        <div className="main-num text-sm font-bold text-gray-800 dark:text-gray-100">
+                          {c.transactionCount}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[11px] text-[#64748B] dark:text-[#8892B0]">
-                    <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Last used:{" "}
-                    <span className="font-medium text-gray-700 dark:text-gray-300">{lastUsed}</span>
                   </div>
                 </div>
-              </div>
-            );
-          })
-        )}
-      </div>
+              );
+            })
+          )}
+        </div>
+      )}
 
       {open && (
         <div
@@ -248,17 +275,29 @@ export function CategoriesView() {
                 <input
                   value={icon}
                   onChange={(e) => setIcon(e.target.value)}
-                  maxLength={2}
+                  maxLength={4}
                   placeholder="💰"
                   className="w-full rounded-xl border border-[#E2E8F0] bg-[#F0F4F8] px-4 py-2.5 text-center text-2xl dark:border-[#2D3149] dark:bg-[#0F1117]"
                 />
               </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-[#64748B] dark:text-[#8892B0]">
+                  Color (optional, hex)
+                </label>
+                <input
+                  value={color}
+                  onChange={(e) => setColor(e.target.value)}
+                  placeholder="#10B981"
+                  className="w-full rounded-xl border border-[#E2E8F0] bg-[#F0F4F8] px-4 py-2.5 text-sm dark:border-[#2D3149] dark:bg-[#0F1117]"
+                />
+              </div>
               <button
                 type="button"
-                onClick={submit}
-                className="w-full rounded-[10px] bg-[#00C896] py-2.5 text-sm font-semibold text-white hover:bg-[#00A87C]"
+                disabled={submitting}
+                onClick={() => void submit()}
+                className="w-full rounded-[10px] bg-[#00C896] py-2.5 text-sm font-semibold text-white hover:bg-[#00A87C] disabled:opacity-60"
               >
-                Add Category
+                {submitting ? "Saving…" : "Add Category"}
               </button>
             </div>
           </div>

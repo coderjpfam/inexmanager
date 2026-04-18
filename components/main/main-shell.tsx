@@ -3,6 +3,11 @@
 import { clearAuthToken } from "@/lib/auth-token";
 import { logout } from "@/store/auth/auth.slice";
 import { clearAnalytics } from "@/store/analytics/analytics.slice";
+import { clearAccounts } from "@/store/accounts/accounts.slice";
+import { clearBudgets } from "@/store/budgets/budgets.slice";
+import { clearSavings } from "@/store/savings/savings.slice";
+import { clearLending } from "@/store/lending/lending.slice";
+import { clearCategories } from "@/store/categories/categories.slice";
 import { clearTransactions } from "@/store/transactions/transactions.slice";
 import { clearDashboard } from "@/store/dashboard/dashboard.slice";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -176,6 +181,11 @@ export function MainShell({ children }: { children: ReactNode }) {
   const handleSignOut = useCallback(() => {
     clearAuthToken();
     dispatch(clearAnalytics());
+    dispatch(clearAccounts());
+    dispatch(clearBudgets());
+    dispatch(clearSavings());
+    dispatch(clearLending());
+    dispatch(clearCategories());
     dispatch(clearTransactions());
     dispatch(clearDashboard());
     dispatch(logout());
